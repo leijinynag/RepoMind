@@ -1,0 +1,26 @@
+version: '3.8'
+
+services:
+  mongodb:
+    image: mongo:7
+    container_name: github-agent-mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongodb_data:/data/db
+    environment:
+      MONGO_INITDB_DATABASE: github-agent
+
+  chromadb:
+    image: chromadb/chroma:latest
+    container_name: github-agent-chroma
+    ports:
+      - "8000:8000"
+    volumes:
+      - chroma_data:/chroma/chroma
+    environment:
+      IS_PERSISTENT: TRUE
+
+volumes:
+  mongodb_data:
+  chroma_data:
