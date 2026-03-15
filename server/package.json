@@ -8,7 +8,8 @@
     "dev": "nodemon --exec tsx src/index.ts",
     "build": "tsc",
     "start": "node dist/index.js",
-    "cleanup": "tsx src/scripts/cleanup.ts"
+    "cleanup": "tsx src/scripts/cleanup.ts",
+    "test:llm": "tsx src/scripts/test-llm.ts"
   },
   "keywords": [],
   "author": "",
