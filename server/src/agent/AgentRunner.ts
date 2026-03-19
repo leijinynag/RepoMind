@@ -7,6 +7,8 @@ import { parseReActOutput, ParsedOutput } from "./parseReActOutput";
 import { ToolRegistry } from "../tools/ToolRegistry";
 import { ListFilesTool } from "../tools/listFile";
 import { ReadFileTool } from "../tools/readFile";
+import { SearchCodeTool } from "../tools/searchCode";
+import { GrepCodeTool } from "../tools/grepCode";
 
 // Agent 运行过程中的每一步
 export interface AgentStep {
@@ -19,6 +21,8 @@ function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(new ListFilesTool());
   registry.register(new ReadFileTool());
+  registry.register(new SearchCodeTool());
+  registry.register(new GrepCodeTool())
   return registry;
 }
 
@@ -34,14 +38,14 @@ function createLLMClient(): DeepSeekClient {
 export async function runReActLoop(
   userQuestion: string,
   repoId: string,
-  onStep?: (step: AgentStep) => void
+  onStep?: (step: AgentStep) => void,
 ): Promise<string> {
   const toolRegistry = createToolRegistry();
   const llmClient = createLLMClient();
   const tools = toolRegistry.getAllDefinitions();
 
   const messages: Message[] = [
-    { role: "system", content: buildSystemPrompt(tools) },
+    { role: "system", content: buildSystemPrompt(tools, repoId) },
     { role: "user", content: userQuestion },
   ];
 
@@ -105,7 +109,8 @@ export async function runReActLoop(
       messages.push({ role: "assistant", content: llmOutput });
       messages.push({
         role: "user",
-        content: "请严格按照格式输出：Thought/Action/Action Input 或 Final Answer",
+        content:
+          "请严格按照格式输出：Thought/Action/Action Input 或 Final Answer",
       });
     }
   }

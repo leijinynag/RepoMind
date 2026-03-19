@@ -9,7 +9,8 @@
     "build": "tsc",
     "start": "node dist/index.js",
     "cleanup": "tsx src/scripts/cleanup.ts",
-    "test:llm": "tsx src/scripts/test-llm.ts"
+    "test:llm": "tsx src/scripts/test-llm.ts",
+    "test:agent": "tsx src/scripts/test-agent.ts"
   },
   "keywords": [],
   "author": "",

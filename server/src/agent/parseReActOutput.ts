@@ -2,7 +2,7 @@
 export interface ParsedOutput {
   thought?: string;
   action?: string;
-  actionInput?: Record<string, any>;  // 改为对象类型
+  actionInput?: Record<string, any>; // 改为对象类型
   finalAnswer?: string;
 }
 
@@ -25,12 +25,14 @@ export function parseReActOutput(output: string | undefined): ParsedOutput {
   }
 
   // 匹配 Action Input（JSON 参数）
-  const actionInputMatch = output.match(/Action Input:\s*([\s\S]*?)(?=\n\n|Observation:|Final Answer:|$)/i);
+  const actionInputMatch = output.match(
+    /Action Input:\s*([\s\S]*?)(?=\n\n|Observation:|Final Answer:|$)/i,
+  );
   if (actionInputMatch) {
     try {
       parsed.actionInput = JSON.parse(actionInputMatch[1].trim());
     } catch {
-      console.warn('Action Input JSON 解析失败:', actionInputMatch[1]);
+      console.warn("Action Input JSON 解析失败:", actionInputMatch[1]);
     }
   }
 
