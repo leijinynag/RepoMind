@@ -17,7 +17,7 @@ app.get('/health', (req, res) => {
 });
 
 // API 路由
-app.use('/api/repo', repoRoutes);
+app.use('/api/repos', repoRoutes);
 
 // 连接数据库（即使失败也继续运行）
 connectDB();

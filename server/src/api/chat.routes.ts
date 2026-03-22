@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { runReActLoop } from "../agent/AgentRunner";
+import { runReActLoop, ModelType } from "../agent/AgentRunner";
 const router = Router();
 router.post("/", async (req, res) => {
   try {
@@ -7,15 +7,17 @@ router.post("/", async (req, res) => {
     if (!repoId || !message) {
       return res.status(400).json({ error: "缺少必要参数" });
     }
-    const answer = await runReActLoop(message, repoId);
+    const answer = await runReActLoop(message, repoId, [], "deepseek");
     res.json({ answer });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
 });
 
-router.post('/stream', async (req, res) => {
-  const { repoId, message } = req.body;
+// SSE 流式接口（POST 方法，支持历史消息）
+router.post('/:repoId/stream', async (req, res) => {
+  const { repoId } = req.params;
+  const { message, history = [], model = "deepseek" } = req.body;
 
   // 参数校验（在设置 SSE 头之前）
   if (!repoId || !message) {
@@ -28,12 +30,13 @@ router.post('/stream', async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   try {
-    const answer = await runReActLoop(message, repoId, (step) => {
-      res.write(`data: ${JSON.stringify(step)}\n\n`);
+    const answer = await runReActLoop(message, repoId, history, model as ModelType, (step) => {
+      // 发送每一步
+      res.write(`data: ${JSON.stringify({ type: "step", step })}\n\n`);
     });
 
     // 发送最终答案
-    res.write(`data: ${JSON.stringify({ type: "done", content: answer })}\n\n`);
+    res.write(`data: ${JSON.stringify({ type: "answer", content: answer })}\n\n`);
     res.end();
   } catch (error: any) {
     // SSE 连接已建立，不能用 res.status()，只能用 res.write()

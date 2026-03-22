@@ -37,8 +37,12 @@ export class RepoManager {
       await fs.mkdir(localPath, { recursive: true });
 
       // clone（shallow clone 节省时间和空间）
+      // 禁用 HTTP2 避免连接问题
       const git = simpleGit();
-      await git.clone(url, localPath, ['--depth', '1']);
+      await git.clone(url, localPath, [
+        '--depth', '1',
+        '--config', 'http.version=HTTP/1.1'
+      ]);
 
       // 统计文件数
       const fileCount = await this.countFiles(localPath);
@@ -97,4 +101,63 @@ export class RepoManager {
     // 删除数据库记录
     await Repo.deleteOne({ repoId });
   }
+
+  // 获取文件目录树
+  async getFileTree(repoId: string): Promise<FileTreeNode[]> {
+    const repo = await Repo.findOne({ repoId });
+    if (!repo) throw new Error('Repo not found');
+
+    return this.buildFileTree(repo.localPath);
+  }
+
+  private async buildFileTree(dir: string, relativePath: string = ''): Promise<FileTreeNode[]> {
+    const result: FileTreeNode[] = [];
+    
+    try {
+      const entries = await fs.readdir(dir, { withFileTypes: true });
+      
+      // 排序：文件夹在前，文件在后，按名称排序
+      entries.sort((a, b) => {
+        if (a.isDirectory() && !b.isDirectory()) return -1;
+        if (!a.isDirectory() && b.isDirectory()) return 1;
+        return a.name.localeCompare(b.name);
+      });
+
+      for (const entry of entries) {
+        // 跳过隐藏文件和 node_modules
+        if (entry.name.startsWith('.')) continue;
+        if (entry.name === 'node_modules') continue;
+
+        const fullPath = path.join(dir, entry.name);
+        const itemRelativePath = relativePath ? `${relativePath}/${entry.name}` : entry.name;
+
+        if (entry.isDirectory()) {
+          const children = await this.buildFileTree(fullPath, itemRelativePath);
+          result.push({
+            name: entry.name,
+            path: itemRelativePath,
+            type: 'directory',
+            children
+          });
+        } else {
+          result.push({
+            name: entry.name,
+            path: itemRelativePath,
+            type: 'file'
+          });
+        }
+      }
+    } catch (error) {
+      // 忽略权限错误
+    }
+
+    return result;
+  }
+}
+
+export interface FileTreeNode {
+  name: string;
+  path: string;
+  type: 'file' | 'directory';
+  children?: FileTreeNode[];
 }

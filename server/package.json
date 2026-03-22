@@ -10,14 +10,21 @@
     "start": "node dist/index.js",
     "cleanup": "tsx src/scripts/cleanup.ts",
     "test:llm": "tsx src/scripts/test-llm.ts",
-    "test:agent": "tsx src/scripts/test-agent.ts"
+    "test:agent": "tsx src/scripts/test-agent.ts",
+    "test:chunker": "tsx src/scripts/test-chunker.ts",
+    "test:embedding": "tsx src/scripts/test-embedding.ts",
+    "test:vectorstore": "tsx src/scripts/test-vectorstore.ts",
+    "test:rag": "tsx src/scripts/test-rag-full.ts",
+    "test:agent-rag": "tsx src/scripts/test-agent-rag.ts"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@xenova/transformers": "^2.17.2",
     "axios": "^1.13.6",
+    "chromadb": "^3.4.0",
     "cors": "^2.8.6",
     "dotenv": "^17.3.1",
     "express": "^5.2.1",
