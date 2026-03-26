@@ -1,13 +1,17 @@
 import { useState, useCallback } from "react";
 import { AgentStep } from "@/types/agent";
+
 interface SSEOptions {
   onStep?: (step: AgentStep) => void;
+  onToken?: (token: string) => void;
   onAnswer?: (answer: string) => void;
   onError?: (error: string) => void;
 }
+
 export const useSSE = () => {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<AgentStep[]>([]);
+  const [streamingContent, setStreamingContent] = useState("");
 
   const sendMessage = useCallback(
     async (
@@ -19,9 +23,9 @@ export const useSSE = () => {
     ) => {
       setLoading(true);
       setSteps([]);
+      setStreamingContent("");
 
       try {
-        // 改用 fetch + ReadableStream 处理 SSE（因为需要 POST）
         const response = await fetch(`/api/chat/${repoId}/stream`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -40,7 +44,6 @@ export const useSSE = () => {
           if (done) break;
 
           const text = decoder.decode(value);
-          // 解析 SSE 格式: "data: {...}\n\n"
           const lines = text.split("\n\n");
           for (const line of lines) {
             if (line.startsWith("data: ")) {
@@ -48,14 +51,19 @@ export const useSSE = () => {
               if (jsonStr === "[DONE]") continue;
               try {
                 const data = JSON.parse(jsonStr);
-                // 处理 step/answer/error...
-                if (data.type === "step") {
+                if (data.type === "token") {
+                  setStreamingContent((prev) => prev + data.token);
+                  options?.onToken?.(data.token);
+                } else if (data.type === "step") {
+                  setStreamingContent("");
                   setSteps((prev) => [...prev, data.step]);
                   options?.onStep?.(data.step);
                 } else if (data.type === "answer") {
+                  setStreamingContent("");
                   options?.onAnswer?.(data.content);
                   setLoading(false);
                 } else if (data.type === "error") {
+                  setStreamingContent("");
                   options?.onError?.(data.content);
                   setLoading(false);
                 }
@@ -73,5 +81,5 @@ export const useSSE = () => {
     [],
   );
 
-  return { sendMessage, loading, steps };
+  return { sendMessage, loading, steps, streamingContent };
 };

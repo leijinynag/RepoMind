@@ -3,8 +3,9 @@ import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { AgentStep } from '@/types/agent'
-import { User, Bot, ChevronDown, ChevronRight, Brain, Wrench, Eye } from 'lucide-react'
 import { useState } from 'react'
+import { Typography, Tag, Button } from 'antd'
+import { UserOutlined, RobotOutlined, BulbOutlined, ToolOutlined, EyeOutlined, DownOutlined, RightOutlined } from '@ant-design/icons'
 
 interface MessageBubbleProps {
   role: 'user' | 'assistant'
@@ -17,30 +18,23 @@ export function MessageBubble({ role, content, steps }: MessageBubbleProps) {
   const [showSteps, setShowSteps] = useState(false)
 
   return (
-    <div className={`flex gap-3 ${isUser ? 'flex-row-reverse' : ''}`}>
+    <div className={`msg-row ${isUser ? 'user' : ''}`}>
       {/* 头像 */}
-      <div className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${
-        isUser ? 'bg-blue-600' : 'bg-gradient-to-br from-purple-500 to-blue-500'
-      }`}>
+      <div className="msg-avatar">
         {isUser ? (
-          <User className="w-4 h-4 text-white" />
+          <UserOutlined style={{ fontSize: 16, color: 'var(--accent)' }} />
         ) : (
-          <Bot className="w-4 h-4 text-white" />
+          <RobotOutlined style={{ fontSize: 16, color: 'var(--accent)' }} />
         )}
       </div>
 
       {/* 消息内容 */}
-      <div className={`max-w-[75%] ${isUser ? 'text-right' : ''}`}>
-        {/* 消息气泡 */}
-        <div className={`inline-block px-4 py-3 rounded-2xl ${
-          isUser 
-            ? 'bg-blue-600 text-white rounded-br-md' 
-            : 'bg-white text-gray-900 shadow-sm border border-gray-100 rounded-bl-md'
-        }`}>
+      <div className="msg-body">
+        <div className={`msg-bubble ${isUser ? 'user' : 'bot'}`}>
           {isUser ? (
-            <p className="whitespace-pre-wrap">{content}</p>
+            <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
           ) : (
-            <div className="prose prose-sm max-w-none prose-pre:p-0 prose-pre:m-0">
+            <div className="prose prose-sm max-w-none">
               <ReactMarkdown
                 remarkPlugins={[remarkGfm]}
                 components={{
@@ -51,26 +45,45 @@ export function MessageBubble({ role, content, steps }: MessageBubbleProps) {
                         style={oneDark}
                         language={match[1]}
                         PreTag="div"
-                        className="rounded-lg !my-2"
+                        customStyle={{ borderRadius: 8, fontSize: 12, margin: '8px 0' }}
                         {...props}
                       >
                         {String(children).replace(/\n$/, '')}
                       </SyntaxHighlighter>
                     ) : (
-                      <code className="bg-gray-100 text-red-600 px-1.5 py-0.5 rounded text-sm" {...props}>
+                      <code style={{
+                        background: 'var(--bg-tertiary)',
+                        color: 'var(--accent)',
+                        padding: '1px 4px',
+                        borderRadius: 3,
+                        fontSize: 12,
+                        fontFamily: 'monospace',
+                      }} {...props}>
                         {children}
                       </code>
                     )
                   },
                   p({ children }) {
-                    return <p className="mb-2 last:mb-0">{children}</p>
+                    return <p style={{ marginBottom: 6, lineHeight: 1.6 }}>{children}</p>
                   },
                   ul({ children }) {
-                    return <ul className="list-disc pl-4 mb-2">{children}</ul>
+                    return <ul style={{ paddingLeft: 16, marginBottom: 6 }}>{children}</ul>
                   },
                   ol({ children }) {
-                    return <ol className="list-decimal pl-4 mb-2">{children}</ol>
-                  }
+                    return <ol style={{ paddingLeft: 16, marginBottom: 6 }}>{children}</ol>
+                  },
+                  li({ children }) {
+                    return <li style={{ lineHeight: 1.6 }}>{children}</li>
+                  },
+                  h1({ children }) {
+                    return <h1 style={{ fontSize: 16, fontWeight: 700, margin: '10px 0 6px' }}>{children}</h1>
+                  },
+                  h2({ children }) {
+                    return <h2 style={{ fontSize: 14, fontWeight: 700, margin: '10px 0 6px' }}>{children}</h2>
+                  },
+                  h3({ children }) {
+                    return <h3 style={{ fontSize: 13, fontWeight: 700, margin: '8px 0 4px' }}>{children}</h3>
+                  },
                 }}
               >
                 {content}
@@ -81,21 +94,19 @@ export function MessageBubble({ role, content, steps }: MessageBubbleProps) {
 
         {/* Agent 思考过程（可展开） */}
         {steps && steps.length > 0 && (
-          <div className="mt-2">
-            <button
+          <div className="msg-steps-toggle">
+            <Button
+              type="text"
+              size="small"
+              icon={showSteps ? <DownOutlined /> : <RightOutlined />}
               onClick={() => setShowSteps(!showSteps)}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-700 transition"
+              style={{ padding: 0, fontSize: 11, color: 'var(--text-tertiary)' }}
             >
-              {showSteps ? (
-                <ChevronDown className="w-3 h-3" />
-              ) : (
-                <ChevronRight className="w-3 h-3" />
-              )}
-              <span>查看思考过程 ({steps.length} 步)</span>
-            </button>
+              查看思考过程 ({steps.length} 步)
+            </Button>
             
             {showSteps && (
-              <div className="mt-2 space-y-2 text-left">
+              <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {steps.map((step, index) => (
                   <StepItem key={index} step={step} index={index} />
                 ))}
@@ -112,80 +123,49 @@ export function MessageBubble({ role, content, steps }: MessageBubbleProps) {
 function StepItem({ step, index }: { step: AgentStep; index: number }) {
   const [expanded, setExpanded] = useState(false)
   
-  const getStepIcon = () => {
+  const getStepConfig = () => {
     switch (step.type) {
       case 'thought':
-        return <Brain className="w-3 h-3 text-purple-500" />
+        return { icon: <BulbOutlined />, label: '思考', color: 'blue' }
       case 'action':
-        return <Wrench className="w-3 h-3 text-blue-500" />
+        return { icon: <ToolOutlined />, label: '执行', color: 'cyan' }
       case 'observation':
-        return <Eye className="w-3 h-3 text-green-500" />
+        return { icon: <EyeOutlined />, label: '观察', color: 'green' }
       default:
-        return null
+        return { icon: null, label: step.type, color: 'default' as const }
     }
   }
 
-  const getStepLabel = () => {
-    switch (step.type) {
-      case 'thought':
-        return '思考'
-      case 'action':
-        return '行动'
-      case 'observation':
-        return '观察'
-      default:
-        return step.type
-    }
-  }
-
-  const getStepColor = () => {
-    switch (step.type) {
-      case 'thought':
-        return 'bg-purple-50 border-purple-200'
-      case 'action':
-        return 'bg-blue-50 border-blue-200'
-      case 'observation':
-        return 'bg-green-50 border-green-200'
-      default:
-        return 'bg-gray-50 border-gray-200'
-    }
-  }
-
-  const isLongContent = step.content.length > 100
+  const config = getStepConfig()
+  const isLongContent = step.content.length > 150
 
   return (
-    <div className={`text-xs rounded-lg border p-2 ${getStepColor()}`}>
-      <div className="flex items-center gap-1 mb-1">
-        {getStepIcon()}
-        <span className="font-medium text-gray-700">
-          {index + 1}. {getStepLabel()}
-        </span>
+    <div className="msg-step-item">
+      <div style={{ display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
+        <Tag 
+          icon={config.icon} 
+          color={config.color}
+          style={{ fontSize: 11, padding: '0 4px', margin: 0 }}
+        >
+          {index + 1}. {config.label}
+        </Tag>
       </div>
-      <div className="text-gray-600">
-        {isLongContent && !expanded ? (
-          <>
-            <span>{step.content.slice(0, 100)}...</span>
-            <button
-              onClick={() => setExpanded(true)}
-              className="text-blue-500 hover:underline ml-1"
-            >
-              展开
-            </button>
-          </>
-        ) : (
-          <>
-            <span className="whitespace-pre-wrap">{step.content}</span>
-            {isLongContent && (
-              <button
-                onClick={() => setExpanded(false)}
-                className="text-blue-500 hover:underline ml-1"
-              >
-                收起
-              </button>
-            )}
-          </>
-        )}
-      </div>
+      <Typography.Paragraph 
+        style={{ marginBottom: 0, fontSize: 11, color: 'var(--text-secondary)', lineHeight: 1.5 }}
+        ellipsis={isLongContent && !expanded ? { rows: 2, expandable: false } : false}
+      >
+        {step.content}
+      </Typography.Paragraph>
+      {isLongContent && (
+        <Button 
+          type="link" 
+          size="small" 
+          onClick={() => setExpanded(!expanded)}
+          style={{ padding: 0, height: 'auto', fontSize: 11 }}
+        >
+          {expanded ? '收起' : '展开'}
+        </Button>
+      )}
     </div>
   )
 }

@@ -77,25 +77,25 @@ export default function HomePage() {
 
   if (loading) {
     return (
-      <div className="h-full flex items-center justify-center">
+      <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         <Spin size="large" />
       </div>
     )
   }
 
   return (
-    <div className="h-full overflow-auto p-6 bg-slate-50">
+    <div className="home-page">
       {/* 头部 */}
-      <div className="flex items-center justify-between mb-6">
-        <Typography.Title level={4} className="!mb-0">
-          我的仓库
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
+        <Typography.Title level={4} style={{ margin: 0 }}>
+          My Repositories
         </Typography.Title>
         <Button
           type="primary"
           icon={<PlusOutlined />}
           onClick={() => setAddModalOpen(true)}
         >
-          添加仓库
+          Add Repository
         </Button>
       </div>
 
@@ -103,10 +103,10 @@ export default function HomePage() {
       {repos.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
-          description="暂无仓库"
+          description="No repositories yet"
         >
           <Button type="primary" onClick={() => setAddModalOpen(true)}>
-            添加第一个仓库
+            Add your first repository
           </Button>
         </Empty>
       ) : (
@@ -115,7 +115,7 @@ export default function HomePage() {
             <Col xs={24} sm={12} lg={8} xl={6} key={repo.repoId}>
               <Card
                 hoverable
-                className="h-full"
+                style={{ height: '100%' }}
                 onClick={() => handleCardClick(repo.repoId)}
                 actions={[
                   <Button
@@ -126,7 +126,7 @@ export default function HomePage() {
                       handleCardClick(repo.repoId)
                     }}
                   >
-                    对话
+                    Chat
                   </Button>,
                   <Button
                     type="text"
@@ -134,24 +134,28 @@ export default function HomePage() {
                     icon={<DeleteOutlined />}
                     onClick={(e) => handleDeleteRepo(repo.repoId, e)}
                   >
-                    删除
+                    Delete
                   </Button>,
                 ]}
               >
                 <Card.Meta
                   avatar={
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center">
-                      <GithubOutlined className="text-white text-lg" />
+                    <div style={{
+                      width: 40, height: 40, borderRadius: 8,
+                      background: 'var(--accent)', display: 'flex',
+                      alignItems: 'center', justifyContent: 'center'
+                    }}>
+                      <GithubOutlined style={{ color: '#fff', fontSize: 18 }} />
                     </div>
                   }
                   title={repo.name}
                   description={
-                    <div className="mt-2">
+                    <div style={{ marginTop: 8 }}>
                       <Tag icon={<FileOutlined />} color="blue">
-                        {repo.fileCount} 文件
+                        {repo.fileCount} files
                       </Tag>
                       <Tag color={repo.status === 'ready' ? 'green' : 'orange'}>
-                        {repo.status === 'ready' ? '就绪' : repo.status}
+                        {repo.status === 'ready' ? 'Ready' : repo.status}
                       </Tag>
                     </div>
                   }
@@ -164,7 +168,7 @@ export default function HomePage() {
 
       {/* 添加仓库弹窗 */}
       <Modal
-        title="添加 GitHub 仓库"
+        title="Add GitHub Repository"
         open={addModalOpen}
         onOk={handleAddRepo}
         onCancel={() => {
@@ -172,15 +176,15 @@ export default function HomePage() {
           setAddUrl('')
         }}
         confirmLoading={addLoading}
-        okText="添加"
-        cancelText="取消"
+        okText="Add"
+        cancelText="Cancel"
       >
         <Input
           placeholder="https://github.com/user/repo"
           value={addUrl}
           onChange={(e) => setAddUrl(e.target.value)}
           onPressEnter={handleAddRepo}
-          className="mt-4"
+          style={{ marginTop: 16 }}
         />
       </Modal>
     </div>

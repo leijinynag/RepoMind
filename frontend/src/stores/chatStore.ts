@@ -1,12 +1,13 @@
 import { create } from "zustand";
 import { AgentStep, Message } from "@/types/agent";
 import { persist } from "zustand/middleware";
-export type ModelType = "deepseek" | "glm-4-flash" | "glm-4-plus" | "glm-5";
+export type ModelType = "deepseek" | "glm-4-flash" | "glm-4-plus" | "glm-4.7";
 
 interface ChatState {
   chatHistory: Record<string, Message[]>;
   currentRepoId: string | null;
   currentSteps: AgentStep[];
+  displaySteps: AgentStep[];  // 对话完成后保留显示的 steps
   loading: boolean;
   currentModel: ModelType;
   setCurrentRepo: (repoId: string) => void;
@@ -14,6 +15,8 @@ interface ChatState {
   addMessage: (repoId: string, message: Omit<Message, "id" | "timestamp">) => void;
   addStep: (step: AgentStep) => void;
   clearSteps: () => void;
+  setDisplaySteps: (steps: AgentStep[]) => void;  // 保存完成的 steps 用于显示
+  clearDisplaySteps: () => void;  // 清除显示的 steps
   setLoading: (loading: boolean) => void;
   clearMessages: (repoId: string) => void;
   setCurrentModel: (model: ModelType) => void;
@@ -25,6 +28,7 @@ export const useChatStore = create<ChatState>()(
       chatHistory: {},
       currentRepoId: null,
       currentSteps: [],
+      displaySteps: [],
       loading: false,
       currentModel: "deepseek",
 
@@ -55,6 +59,8 @@ export const useChatStore = create<ChatState>()(
         })),
 
       clearSteps: () => set({ currentSteps: [] }),
+      setDisplaySteps: (steps) => set({ displaySteps: steps }),
+      clearDisplaySteps: () => set({ displaySteps: [] }),
       setLoading: (loading) => set({ loading }),
 
       clearMessages: (repoId) =>

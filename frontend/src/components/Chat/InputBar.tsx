@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Input, Button, Typography } from 'antd'
+import { Input, Button, Tooltip } from 'antd'
 import { SendOutlined, LoadingOutlined } from '@ant-design/icons'
 
 const { TextArea } = Input
@@ -21,11 +21,9 @@ export function InputBar({ onSend, disabled, placeholder = '输入你的问题..
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // Ctrl/Cmd + Enter 发送
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       handleSubmit(e)
     }
-    // 单独 Enter 也发送（Shift+Enter 换行）
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       handleSubmit(e)
@@ -33,34 +31,38 @@ export function InputBar({ onSend, disabled, placeholder = '输入你的问题..
   }
 
   return (
-    <div className="border-t border-slate-200 bg-white p-4">
-      <div className="flex gap-3 items-end">
-        <div className="flex-1 relative">
-          <TextArea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={placeholder}
-            autoSize={{ minRows: 1, maxRows: 4 }}
-            disabled={disabled}
-            className="!rounded-xl !py-2.5 !px-4 !text-sm"
-            style={{ resize: 'none' }}
-          />
-          <Typography.Text 
-            type="secondary" 
-            className="absolute right-3 bottom-1.5 text-[10px]"
-          >
-            Enter 发送 · Shift+Enter 换行
-          </Typography.Text>
-        </div>
-        <Button
-          type="primary"
-          size="large"
-          icon={disabled ? <LoadingOutlined spin /> : <SendOutlined />}
-          onClick={handleSubmit}
-          disabled={disabled || !input.trim()}
-          className="!rounded-xl !h-10 !w-10 flex items-center justify-center"
+    <div className="chat-input-area">
+      <div className="chat-input-wrapper">
+        <TextArea
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          autoSize={{ minRows: 1, maxRows: 5 }}
+          disabled={disabled}
+          style={{
+            border: 'none',
+            boxShadow: 'none',
+            background: 'transparent',
+            padding: '4px 8px',
+            fontSize: 13,
+            resize: 'none',
+            color: 'var(--text-primary)',
+          }}
         />
+        <Tooltip title="Enter to send">
+          <Button
+            type="primary"
+            shape="circle"
+            icon={disabled ? <LoadingOutlined spin /> : <SendOutlined />}
+            onClick={handleSubmit}
+            disabled={disabled || !input.trim()}
+            style={{ width: 32, height: 32, minWidth: 32, flexShrink: 0 }}
+          />
+        </Tooltip>
+      </div>
+      <div className="chat-input-hint">
+        Enter to send · Shift+Enter for new line
       </div>
     </div>
   )

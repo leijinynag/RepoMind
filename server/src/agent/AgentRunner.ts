@@ -5,7 +5,7 @@ import { DeepSeekClient } from "../llm/DeepSeekClients";
 import { GLMClient } from "../llm/GLMClient";
 
 // 支持的模型类型
-export type ModelType = "deepseek" | "glm-4-flash" | "glm-4-plus" | "glm-5";
+export type ModelType = "deepseek" | "glm-4-flash" | "glm-4-plus" | "glm-4.7";
 import { buildSystemPrompt, ProjectContext } from "./PromptBuilder";
 import { parseReActOutput, ParsedOutput } from "./parseReActOutput";
 import { ToolRegistry } from "../tools/ToolRegistry";
@@ -20,6 +20,17 @@ import { CodebaseMemory } from "../models/codebaseMemory.model";
 export interface AgentStep {
   type: "thought" | "action" | "observation" | "answer";
   content: string;
+
+  // 新增字段
+  stepIndex: number;
+  timestamp: number;
+
+  //Action专属字段
+  toolName?: string;
+  toolInput?: Record<string, any>;
+  //Observation专属字段
+  executionTime?: number; //执行耗时
+  success?: boolean; //是否成功
 }
 
 // 创建工具注册中心并注册工具
@@ -41,7 +52,11 @@ function createLLMClient(model: ModelType = "deepseek"): LLMClient {
       throw new Error("DEEPSEEK_API_KEY 未配置");
     }
     return new DeepSeekClient(apiKey);
-  } else if (model === "glm-4-flash" || model === "glm-4-plus" || model === "glm-5") {
+  } else if (
+    model === "glm-4-flash" ||
+    model === "glm-4-plus" ||
+    model === "glm-4.7"
+  ) {
     const apiKey = process.env.GLM_API_KEY;
     if (!apiKey) {
       throw new Error("GLM_API_KEY 未配置");
@@ -53,7 +68,9 @@ function createLLMClient(model: ModelType = "deepseek"): LLMClient {
 }
 
 // 从 CodebaseMemory 加载项目背景信息
-async function loadProjectContext(repoId: string): Promise<ProjectContext | undefined> {
+async function loadProjectContext(
+  repoId: string,
+): Promise<ProjectContext | undefined> {
   try {
     const memory = await CodebaseMemory.findOne({ repoId });
     if (memory && memory.overview) {
@@ -68,7 +85,7 @@ async function loadProjectContext(repoId: string): Promise<ProjectContext | unde
       };
     }
   } catch (error) {
-    console.warn('加载项目背景信息失败:', error);
+    console.warn("加载项目背景信息失败:", error);
   }
   return undefined;
 }
@@ -88,11 +105,14 @@ export async function runReActLoop(
   // 加载项目背景信息
   const projectContext = await loadProjectContext(repoId);
   if (projectContext) {
-    console.log('✅ 已加载项目背景信息:', projectContext.name);
+    console.log("✅ 已加载项目背景信息:", projectContext.name);
   }
 
   const messages: Message[] = [
-    { role: "system", content: buildSystemPrompt(tools, repoId, projectContext) },
+    {
+      role: "system",
+      content: buildSystemPrompt(tools, repoId, projectContext),
+    },
     ...history.slice(-15).map((h) => ({
       role: h.role as "user" | "assistant",
       content: h.content,
@@ -100,7 +120,8 @@ export async function runReActLoop(
     { role: "user", content: userQuestion },
   ];
 
-  const MAX_STEPS = 200;
+  const MAX_STEPS = 50;
+  let globalStepIndex = 0;
 
   for (let step = 0; step < MAX_STEPS; step++) {
     console.log(`\n=== Step ${step + 1} ===`);
@@ -115,13 +136,27 @@ export async function runReActLoop(
 
     // 3. 如果有思考过程，通知回调
     if (parsed.thought && onStep) {
-      onStep({ type: "thought", content: parsed.thought });
+      globalStepIndex++;
+      onStep({
+        type: "thought",
+        content: parsed.thought,
+        stepIndex: globalStepIndex,
+        timestamp: Date.now(),
+      });
     }
 
     // 4. 如果是最终答案，返回结果
     if (parsed.finalAnswer) {
+      // 加一个小延迟，让前端有时间渲染思考过程
+      await new Promise((resolve) => setTimeout(resolve, 100));
       if (onStep) {
-        onStep({ type: "answer", content: parsed.finalAnswer });
+        globalStepIndex++;
+        onStep({
+          type: "answer",
+          content: parsed.finalAnswer,
+          stepIndex: globalStepIndex,
+          timestamp: Date.now(),
+        });
       }
       return parsed.finalAnswer;
     }
@@ -129,11 +164,20 @@ export async function runReActLoop(
     // 5. 如果是工具调用，执行工具
     if (parsed.action && parsed.actionInput) {
       if (onStep) {
-        onStep({ type: "action", content: `调用工具: ${parsed.action}` });
+        globalStepIndex++;
+        onStep({
+          type: "action",
+          content: `调用工具: ${parsed.action}`,
+          stepIndex: globalStepIndex,
+          timestamp: Date.now(),
+          toolName: parsed.action,
+          toolInput: parsed.actionInput,
+        });
       }
 
       try {
         // 执行工具，注入 repoId
+        const startTime = Date.now();
         const toolResult = await toolRegistry.execute(parsed.action, {
           repoId,
           ...parsed.actionInput,
@@ -142,7 +186,15 @@ export async function runReActLoop(
         console.log("工具执行结果:", toolResult.slice(0, 200) + "...");
 
         if (onStep) {
-          onStep({ type: "observation", content: toolResult });
+          globalStepIndex++;
+          onStep({
+            type: "observation",
+            content: toolResult,
+            stepIndex: globalStepIndex,
+            timestamp: Date.now(),
+            executionTime: Date.now() - startTime,
+            success: true,
+          });
         }
 
         // 6. 把 LLM 回复和工具结果加入对话历史
@@ -151,6 +203,17 @@ export async function runReActLoop(
       } catch (error: any) {
         const errorMsg = `工具执行错误: ${error.message}`;
         console.error(errorMsg);
+        // 发送失败的 observation
+        if (onStep) {
+          globalStepIndex++;
+          onStep({
+            type: "observation",
+            content: errorMsg,
+            stepIndex: globalStepIndex,
+            timestamp: Date.now(),
+            success: false,
+          });
+        }
         messages.push({ role: "assistant", content: llmOutput });
         messages.push({ role: "user", content: `Observation: ${errorMsg}` });
       }

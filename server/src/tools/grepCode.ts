@@ -1,5 +1,6 @@
 import { BaseTool, ToolParams, ToolDefinition } from "./BaseTool";
 import { Repo } from "../models/repo.model";
+import { isTextFile, matchFilePattern } from "./utils/fileUtils";
 import fs from "fs/promises";
 import path from "path";
 
@@ -21,6 +22,10 @@ export class GrepCodeTool extends BaseTool {
             type: "string",
             description: "文件匹配模式，如*.ts,默认搜索所有文件",
           },
+          context: {
+            type: "number",
+            description: "显示匹配行前后的行数（默认2行）",
+          },
         },
         required: ["pattern"],
       },
@@ -32,29 +37,7 @@ export class GrepCodeTool extends BaseTool {
     if (!repo) {
       return "错误，仓库不存在";
     }
-    function matchPattern(filename: string, pattern?: string): boolean {
-      if (!pattern) return true;
-      if (pattern.startsWith("*.")) {
-        return filename.endsWith(pattern.slice(1));
-      }
-      return filename.includes(pattern);
-    }
-    function isTextFile(filename: string): boolean {
-      const textExtensions = [
-        ".ts",
-        ".js",
-        ".tsx",
-        ".jsx",
-        ".json",
-        ".md",
-        ".txt",
-        ".css",
-        ".html",
-        ".yml",
-        ".yaml",
-      ];
-      return textExtensions.some((ext) => filename.endsWith(ext));
-    }
+    
     let regex: RegExp;
     try {
       regex = new RegExp(params.pattern, "gi");
@@ -70,12 +53,14 @@ export class GrepCodeTool extends BaseTool {
       const targetFiles = files.filter(
         (item) =>
           item.isFile() &&
-          matchPattern(item.name, params.filePattern) &&
+          matchFilePattern(item.name, params.filePattern) &&
           isTextFile(item.name) &&
           !item.parentPath.includes(".git"),
       );
       const results: string[] = [];
-      const MAX_RESULTS = 20;
+      const MAX_RESULTS = 15; // 因为有上下文，适当减少
+      const contextLines = params.context ?? 2; // 默认显示前后2行
+      
       for (const file of targetFiles) {
         if (results.length >= MAX_RESULTS) break;
         const filePath = path.join(file.parentPath, file.name);
@@ -85,14 +70,34 @@ export class GrepCodeTool extends BaseTool {
           const lines = content.split("\n");
           for (let i = 0; i < lines.length; i++) {
             if (results.length >= MAX_RESULTS) break;
+            // 重置 regex 的 lastIndex（因为使用了 'g' 标志）
+            regex.lastIndex = 0;
             if (regex.test(lines[i])) {
               const lineNum = i + 1;
-              const lineContent = lines[i].trim().slice(0, 100);
-              results.push(`📄 ${relativePath}:${lineNum}\n   ${lineContent}`);
+              
+              // 获取上下文行
+              const startIdx = Math.max(0, i - contextLines);
+              const endIdx = Math.min(lines.length - 1, i + contextLines);
+              
+              // 构建带行号的上下文
+              const contextBlock = lines
+                .slice(startIdx, endIdx + 1)
+                .map((line, idx) => {
+                  const currentLineNum = startIdx + idx + 1;
+                  const prefix = currentLineNum === lineNum ? "→" : " ";
+                  const lineStr = line.slice(0, 120);
+                  return `${prefix}${currentLineNum.toString().padStart(4)} | ${lineStr}`;
+                })
+                .join("\n");
+              
+              results.push(`📄 ${relativePath}:${lineNum}\n${contextBlock}`);
+              
+              // 跳过已经在上下文中的匹配行，避免重复
+              i = endIdx;
             }
           }
         } catch {
-          //跳过无法读取的文件
+          // 跳过无法读取的文件
         }
       }
       if (results.length === 0) {

@@ -1,7 +1,7 @@
-import { Link, useParams } from 'react-router-dom'
+import { useParams } from 'react-router-dom'
 import { useState, useEffect } from 'react'
-import { Tree, Typography, Spin, Empty, Button } from 'antd'
-import { GithubOutlined, FolderOutlined, FileOutlined, HomeOutlined } from '@ant-design/icons'
+import { Tree, Typography, Spin, Empty } from 'antd'
+import { FolderOutlined, FileOutlined } from '@ant-design/icons'
 import type { DataNode } from 'antd/es/tree'
 import axios from 'axios'
 
@@ -68,64 +68,41 @@ export default function Sidebar() {
   }
 
   return (
-    <aside className="h-full bg-slate-900 text-white flex flex-col">
-      {/* Logo */}
-      <div className="p-4 border-b border-slate-700">
-        <Link to="/" className="flex items-center gap-2 text-white hover:text-blue-400 transition">
-          <GithubOutlined className="text-xl" />
-          <span className="font-bold text-lg">GitHub Agent</span>
-        </Link>
-      </div>
-
-      {/* 返回首页按钮 */}
-      {repoId && (
-        <div className="p-3 border-b border-slate-700">
-          <Link to="/">
-            <Button type="text" icon={<HomeOutlined />} className="!text-slate-400 hover:!text-white w-full justify-start">
-              返回首页
-            </Button>
-          </Link>
+    <aside className="sidebar-panel">
+      {/* 仓库信息头 */}
+      {repoId && repoInfo && (
+        <div className="sidebar-header">
+          <Typography.Text className="sidebar-header-label">EXPLORER</Typography.Text>
+          <Typography.Text className="sidebar-header-name">
+            {repoInfo.name}
+          </Typography.Text>
         </div>
       )}
 
-      {/* 当前仓库信息 */}
-      {repoId && repoInfo && (
-        <div className="p-4 border-b border-slate-700">
-          <Typography.Text className="!text-slate-400 text-xs uppercase">当前仓库</Typography.Text>
-          <div className="mt-2 flex items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-600 flex items-center justify-center flex-shrink-0">
-              <GithubOutlined className="text-white text-sm" />
-            </div>
-            <div className="min-w-0">
-              <Typography.Text className="!text-white block truncate text-sm font-medium">
-                {repoInfo.name}
-              </Typography.Text>
-              <Typography.Text className="!text-slate-500 text-xs">
-                {repoInfo.fileCount} 文件
-              </Typography.Text>
-            </div>
-          </div>
+      {!repoId && (
+        <div className="sidebar-header">
+          <Typography.Text className="sidebar-header-label">EXPLORER</Typography.Text>
         </div>
       )}
 
       {/* 文件树 */}
-      <div className="flex-1 overflow-auto p-2">
+      <div className="sidebar-tree">
         {!repoId ? (
-          <div className="p-4 text-center">
+          <div className="sidebar-empty">
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={<span className="text-slate-500">选择一个仓库查看文件</span>}
+              description={<span className="sidebar-empty-text">选择一个仓库查看文件</span>}
             />
           </div>
         ) : loading ? (
-          <div className="flex items-center justify-center p-8">
-            <Spin />
+          <div className="sidebar-loading">
+            <Spin size="small" />
           </div>
         ) : treeData.length === 0 ? (
-          <div className="p-4 text-center">
+          <div className="sidebar-empty">
             <Empty
               image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description={<span className="text-slate-500">暂无文件</span>}
+              description={<span className="sidebar-empty-text">暂无文件</span>}
             />
           </div>
         ) : (
@@ -133,7 +110,7 @@ export default function Sidebar() {
             showIcon
             defaultExpandedKeys={[]}
             treeData={treeData}
-            className="bg-transparent [&_.ant-tree-node-content-wrapper]:!text-slate-300 [&_.ant-tree-switcher]:!text-slate-500 [&_.ant-tree-iconEle]:!text-yellow-500 [&_.ant-tree-node-content-wrapper:hover]:!bg-slate-700"
+            className="sidebar-file-tree"
           />
         )}
       </div>
