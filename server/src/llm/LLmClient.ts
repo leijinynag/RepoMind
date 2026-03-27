@@ -27,6 +27,9 @@ export abstract class LLMClient {
     messages: Message[],
     options?: ChatOptions,
   ): Promise<ChatResponse>;
-  //流式响应（暂不实现）
-  // abstract chatStream(messages:Message[],options?:ChatOptions):AsyncGenerator<string>;
+  //流式响应
+  abstract chatStream(
+    message:Message[],
+    options?:ChatOptions
+  ):AsyncGenerator<string,void,unknown>
 }

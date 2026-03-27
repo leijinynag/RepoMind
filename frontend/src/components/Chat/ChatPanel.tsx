@@ -6,6 +6,10 @@ import { InputBar } from './InputBar'
 import { AgentStep } from '@/types/agent'
 import { Card, Spin, Timeline, Typography, Select } from 'antd'
 import { RobotOutlined, BulbOutlined, ToolOutlined, EyeOutlined, LoadingOutlined } from '@ant-design/icons'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface ChatPanelProps {
   repoId: string
@@ -118,14 +122,14 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
             />
           ))}
 
-          {/* 流式输出内容（打字机效果） */}
-          {loading && streamingContent && (
-            <StreamingMessage content={streamingContent} />
+          {/* 当前思考过程（流式打印开始后隐藏） */}
+          {loading && currentSteps.length > 0 && !streamingContent && (
+            <ThinkingProcess steps={currentSteps} />
           )}
 
-          {/* 当前思考过程 */}
-          {loading && currentSteps.length > 0 && (
-            <ThinkingProcess steps={currentSteps} />
+          {/* 流式输出内容（打字机效果，有 token 时显示） */}
+          {loading && streamingContent && (
+            <StreamingMessage content={streamingContent} />
           )}
 
           {/* 加载中 */}
@@ -178,10 +182,44 @@ function StreamingMessage({ content }: { content: string }) {
       </div>
       <div className="msg-body">
         <div className="msg-bubble bot">
-          <span style={{ whiteSpace: 'pre-wrap', fontSize: 13 }}>
-            {content}
-            <span className="streaming-cursor" />
-          </span>
+          <div className="prose prose-sm max-w-none">
+            <ReactMarkdown
+              remarkPlugins={[remarkGfm]}
+              components={{
+                code({ node, inline, className, children, ...props }: any) {
+                  const match = /language-(\w+)/.exec(className || '')
+                  return !inline && match ? (
+                    <SyntaxHighlighter
+                      style={oneDark}
+                      language={match[1]}
+                      PreTag="div"
+                      customStyle={{ borderRadius: 8, fontSize: 12, margin: '8px 0' }}
+                      {...props}
+                    >
+                      {String(children).replace(/\n$/, '')}
+                    </SyntaxHighlighter>
+                  ) : (
+                    <code style={{
+                      background: 'var(--bg-tertiary)',
+                      color: 'var(--accent)',
+                      padding: '1px 4px',
+                      borderRadius: 3,
+                      fontSize: 12,
+                      fontFamily: 'monospace',
+                    }} {...props}>
+                      {children}
+                    </code>
+                  )
+                },
+                p({ children }) {
+                  return <p style={{ marginBottom: 6, lineHeight: 1.6 }}>{children}</p>
+                },
+              }}
+            >
+              {content}
+            </ReactMarkdown>
+          </div>
+          <span className="streaming-cursor" />
         </div>
       </div>
     </div>

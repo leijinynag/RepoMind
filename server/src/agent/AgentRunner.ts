@@ -96,6 +96,7 @@ export async function runReActLoop(
   history: { role: string; content: string }[] = [],
   model: ModelType = "deepseek",
   onStep?: (step: AgentStep) => void,
+  onToken?: (token: string) => void,  // 新增：流式 token 回调
 ): Promise<string> {
   const toolRegistry = createToolRegistry();
   const llmClient = createLLMClient(model);
@@ -149,6 +150,46 @@ export async function runReActLoop(
     if (parsed.finalAnswer) {
       // 加一个小延迟，让前端有时间渲染思考过程
       await new Promise((resolve) => setTimeout(resolve, 100));
+
+      // 如果有 onToken 回调，逐字符流式发送已有的答案（无需二次 LLM 调用）
+      if (onToken) {
+        let charIndex = 0;
+        const answer = parsed.finalAnswer;
+        const chunkSize = 3; // 每次发送几个字符，平衡速度和流畅度
+
+        const sendNextChunk = (): Promise<void> => {
+          return new Promise((resolve) => {
+            const send = () => {
+              if (charIndex >= answer.length) {
+                resolve();
+                return;
+              }
+              const chunk = answer.slice(charIndex, charIndex + chunkSize);
+              onToken(chunk);
+              charIndex += chunkSize;
+              setTimeout(send, 20); // 20ms 间隔，约 150字/秒
+            };
+            send();
+          });
+        };
+
+        await sendNextChunk();
+
+        // 流式发送完成后，再发送 answer step 给 ReactFlow
+        if (onStep) {
+          globalStepIndex++;
+          onStep({
+            type: "answer",
+            content: parsed.finalAnswer,
+            stepIndex: globalStepIndex,
+            timestamp: Date.now(),
+          });
+        }
+
+        return parsed.finalAnswer;
+      }
+
+      // 没有 onToken 时，直接发送 step 并返回
       if (onStep) {
         globalStepIndex++;
         onStep({
@@ -158,6 +199,7 @@ export async function runReActLoop(
           timestamp: Date.now(),
         });
       }
+
       return parsed.finalAnswer;
     }
 

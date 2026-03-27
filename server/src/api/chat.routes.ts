@@ -28,14 +28,28 @@ router.post('/:repoId/stream', async (req, res) => {
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // 禁用 nginx 缓冲
+  res.flushHeaders(); // 立即发送响应头，建立 SSE 连接
 
   try {
-    const answer = await runReActLoop(message, repoId, history, model as ModelType, (step) => {
-      // 发送每一步
-      res.write(`data: ${JSON.stringify({ type: "step", step })}\n\n`);
-    });
+    const answer = await runReActLoop(
+      message, 
+      repoId, 
+      history, 
+      model as ModelType,
+      
+      // onStep 回调
+      (step) => {
+        res.write(`data: ${JSON.stringify({ type: "step", step })}\n\n`);
+      },
+      
+      // onToken 回调（新增）
+      (token) => {
+        res.write(`data: ${JSON.stringify({ type: "token", content: token })}\n\n`);
+      }
+    );
 
-    // 发送最终答案
+    // 发送最终答案（确认完成）
     res.write(`data: ${JSON.stringify({ type: "answer", content: answer })}\n\n`);
     res.end();
   } catch (error: any) {

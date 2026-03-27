@@ -38,40 +38,51 @@ export const useSSE = () => {
 
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
+        let buffer = "";
+
+        const processLine = (line: string) => {
+          if (!line.startsWith("data: ")) return;
+          const jsonStr = line.slice(6).trim();
+          if (!jsonStr || jsonStr === "[DONE]") return;
+          try {
+            const data = JSON.parse(jsonStr);
+            if (data.type === "token") {
+              setStreamingContent((prev) => prev + data.content);
+              options?.onToken?.(data.content);
+            } else if (data.type === "step") {
+              setStreamingContent("");
+              setSteps((prev) => [...prev, data.step]);
+              options?.onStep?.(data.step);
+            } else if (data.type === "answer") {
+              setStreamingContent("");
+              options?.onAnswer?.(data.content);
+              setLoading(false);
+            } else if (data.type === "error") {
+              setStreamingContent("");
+              options?.onError?.(data.content);
+              setLoading(false);
+            }
+          } catch (e) {
+            // 忽略解析错误
+          }
+        };
 
         while (reader) {
           const { done, value } = await reader.read();
           if (done) break;
 
-          const text = decoder.decode(value);
-          const lines = text.split("\n\n");
-          for (const line of lines) {
-            if (line.startsWith("data: ")) {
-              const jsonStr = line.slice(6);
-              if (jsonStr === "[DONE]") continue;
-              try {
-                const data = JSON.parse(jsonStr);
-                if (data.type === "token") {
-                  setStreamingContent((prev) => prev + data.token);
-                  options?.onToken?.(data.token);
-                } else if (data.type === "step") {
-                  setStreamingContent("");
-                  setSteps((prev) => [...prev, data.step]);
-                  options?.onStep?.(data.step);
-                } else if (data.type === "answer") {
-                  setStreamingContent("");
-                  options?.onAnswer?.(data.content);
-                  setLoading(false);
-                } else if (data.type === "error") {
-                  setStreamingContent("");
-                  options?.onError?.(data.content);
-                  setLoading(false);
-                }
-              } catch (e) {
-                // 忽略解析错误
-              }
-            }
+          // 使用 buffer 避免 chunk 截断 SSE 事件
+          buffer += decoder.decode(value, { stream: true });
+          const parts = buffer.split("\n\n");
+          // 最后一个可能是不完整的，留在 buffer 里
+          buffer = parts.pop() ?? "";
+          for (const part of parts) {
+            processLine(part.trim());
           }
+        }
+        // 处理最后剩余的数据
+        if (buffer.trim()) {
+          processLine(buffer.trim());
         }
       } catch (error: any) {
         options?.onError?.(error.message || "请求失败");
