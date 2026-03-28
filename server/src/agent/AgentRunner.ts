@@ -1,13 +1,12 @@
-//ReAct 循环主体
+//ReAct 循环主体（使用 Function Calling）
 //整个agent的核心
-import { LLMClient, Message } from "../llm/LLmClient";
+import { LLMClient, Message, ToolCall } from "../llm/LLmClient";
 import { DeepSeekClient } from "../llm/DeepSeekClients";
 import { GLMClient } from "../llm/GLMClient";
 
 // 支持的模型类型
 export type ModelType = "deepseek" | "glm-4-flash" | "glm-4-plus" | "glm-4.7";
 import { buildSystemPrompt, ProjectContext } from "./PromptBuilder";
-import { parseReActOutput, ParsedOutput } from "./parseReActOutput";
 import { ToolRegistry } from "../tools/ToolRegistry";
 import { ListFilesTool } from "../tools/listFile";
 import { ReadFileTool } from "../tools/readFile";
@@ -15,7 +14,7 @@ import { SearchCodeTool } from "../tools/searchCode";
 import { GrepCodeTool } from "../tools/grepCode";
 import { RagSearchTool } from "../tools/ragSearch";
 import { CodebaseMemory } from "../models/codebaseMemory.model";
-
+import { GitTool } from "../tools/gitTool";
 // Agent 运行过程中的每一步
 export interface AgentStep {
   type: "thought" | "action" | "observation" | "answer";
@@ -41,6 +40,7 @@ function createToolRegistry(): ToolRegistry {
   registry.register(new SearchCodeTool());
   registry.register(new GrepCodeTool());
   registry.register(new RagSearchTool());
+  registry.register(new GitTool())
   return registry;
 }
 
@@ -96,11 +96,11 @@ export async function runReActLoop(
   history: { role: string; content: string }[] = [],
   model: ModelType = "deepseek",
   onStep?: (step: AgentStep) => void,
-  onToken?: (token: string) => void,  // 新增：流式 token 回调
+  onToken?: (token: string) => void,
 ): Promise<string> {
   const toolRegistry = createToolRegistry();
   const llmClient = createLLMClient(model);
-  console.log(`🤖 使用模型: ${model}`);
+  console.log(`🤖 使用模型: ${model} (Function Calling 模式)`);
   const tools = toolRegistry.getAllDefinitions();
 
   // 加载项目背景信息
@@ -127,149 +127,167 @@ export async function runReActLoop(
   for (let step = 0; step < MAX_STEPS; step++) {
     console.log(`\n=== Step ${step + 1} ===`);
 
-    // 1. 调用 LLM
-    const response = await llmClient.chat(messages);
-    const llmOutput = response.content || "";
-    console.log("LLM 输出:", llmOutput);
+    // 1. 调用 LLM（传入工具定义）
+    const response = await llmClient.chat(messages, { tools });
+    const content = response.content || "";
+    const toolCalls = response.toolCalls;
 
-    // 2. 解析 LLM 回复
-    const parsed: ParsedOutput = parseReActOutput(llmOutput);
+    console.log("LLM 返回 content:", content?.slice(0, 100) || "(空)");
+    console.log("LLM 返回 toolCalls:", toolCalls?.length || 0, "个");
 
-    // 3. 如果有思考过程，通知回调
-    if (parsed.thought && onStep) {
-      globalStepIndex++;
-      onStep({
-        type: "thought",
-        content: parsed.thought,
-        stepIndex: globalStepIndex,
-        timestamp: Date.now(),
-      });
-    }
+    // 2. 如果有文本内容（思考过程或最终答案）
+    if (content && !toolCalls?.length) {
+      // 没有工具调用，说明是最终答案
+      console.log("✅ 收到最终答案");
 
-    // 4. 如果是最终答案，返回结果
-    if (parsed.finalAnswer) {
-      // 加一个小延迟，让前端有时间渲染思考过程
-      await new Promise((resolve) => setTimeout(resolve, 100));
-
-      // 如果有 onToken 回调，逐字符流式发送已有的答案（无需二次 LLM 调用）
-      if (onToken) {
-        let charIndex = 0;
-        const answer = parsed.finalAnswer;
-        const chunkSize = 3; // 每次发送几个字符，平衡速度和流畅度
-
-        const sendNextChunk = (): Promise<void> => {
-          return new Promise((resolve) => {
-            const send = () => {
-              if (charIndex >= answer.length) {
-                resolve();
-                return;
-              }
-              const chunk = answer.slice(charIndex, charIndex + chunkSize);
-              onToken(chunk);
-              charIndex += chunkSize;
-              setTimeout(send, 20); // 20ms 间隔，约 150字/秒
-            };
-            send();
-          });
-        };
-
-        await sendNextChunk();
-
-        // 流式发送完成后，再发送 answer step 给 ReactFlow
-        if (onStep) {
-          globalStepIndex++;
-          onStep({
-            type: "answer",
-            content: parsed.finalAnswer,
-            stepIndex: globalStepIndex,
-            timestamp: Date.now(),
-          });
-        }
-
-        return parsed.finalAnswer;
+      // 发送思考步骤（如果内容看起来像思考）
+      if (onStep && content.length < 500) {
+        globalStepIndex++;
+        onStep({
+          type: "thought",
+          content: content.slice(0, 200),
+          stepIndex: globalStepIndex,
+          timestamp: Date.now(),
+        });
       }
 
-      // 没有 onToken 时，直接发送 step 并返回
+      // 流式发送答案
+      if (onToken) {
+        await streamAnswer(content, onToken);
+      }
+
+      // 发送 answer step
       if (onStep) {
         globalStepIndex++;
         onStep({
           type: "answer",
-          content: parsed.finalAnswer,
+          content,
           stepIndex: globalStepIndex,
           timestamp: Date.now(),
         });
       }
 
-      return parsed.finalAnswer;
+      return content;
     }
 
-    // 5. 如果是工具调用，执行工具
-    if (parsed.action && parsed.actionInput) {
-      if (onStep) {
+    // 3. 如果有工具调用
+    if (toolCalls && toolCalls.length > 0) {
+      // 如果同时有思考内容，先发送
+      if (content && onStep) {
         globalStepIndex++;
         onStep({
-          type: "action",
-          content: `调用工具: ${parsed.action}`,
+          type: "thought",
+          content,
           stepIndex: globalStepIndex,
           timestamp: Date.now(),
-          toolName: parsed.action,
-          toolInput: parsed.actionInput,
         });
       }
 
-      try {
-        // 执行工具，注入 repoId
-        const startTime = Date.now();
-        const toolResult = await toolRegistry.execute(parsed.action, {
-          repoId,
-          ...parsed.actionInput,
+      // 构建 assistant 消息（包含 tool_calls）
+      const assistantMessage: Message = {
+        role: "assistant",
+        content: content || "",
+        tool_calls: toolCalls,
+      };
+      messages.push(assistantMessage);
+
+      // 执行所有工具调用（可并行）
+      const toolResults = await Promise.all(
+        toolCalls.map(async (tc) => {
+          // 发送 action step
+          if (onStep) {
+            globalStepIndex++;
+            onStep({
+              type: "action",
+              content: `调用工具: ${tc.name}`,
+              stepIndex: globalStepIndex,
+              timestamp: Date.now(),
+              toolName: tc.name,
+              toolInput: tc.arguments,
+            });
+          }
+
+          const startTime = Date.now();
+          try {
+            // 执行工具，注入 repoId
+            const result = await toolRegistry.execute(tc.name, {
+              repoId,
+              ...tc.arguments,
+            });
+            console.log(`工具 ${tc.name} 执行结果:`, result.slice(0, 150) + "...");
+
+            // 发送 observation step
+            if (onStep) {
+              globalStepIndex++;
+              onStep({
+                type: "observation",
+                content: result,
+                stepIndex: globalStepIndex,
+                timestamp: Date.now(),
+                executionTime: Date.now() - startTime,
+                success: true,
+              });
+            }
+
+            return { id: tc.id, result, success: true };
+          } catch (error: any) {
+            const errorMsg = `工具执行错误: ${error.message}`;
+            console.error(errorMsg);
+
+            if (onStep) {
+              globalStepIndex++;
+              onStep({
+                type: "observation",
+                content: errorMsg,
+                stepIndex: globalStepIndex,
+                timestamp: Date.now(),
+                executionTime: Date.now() - startTime,
+                success: false,
+              });
+            }
+
+            return { id: tc.id, result: errorMsg, success: false };
+          }
+        })
+      );
+
+      // 将工具结果作为 tool 消息加入对话
+      for (const tr of toolResults) {
+        messages.push({
+          role: "tool",
+          tool_call_id: tr.id,
+          content: tr.result,
         });
-
-        console.log("工具执行结果:", toolResult.slice(0, 200) + "...");
-
-        if (onStep) {
-          globalStepIndex++;
-          onStep({
-            type: "observation",
-            content: toolResult,
-            stepIndex: globalStepIndex,
-            timestamp: Date.now(),
-            executionTime: Date.now() - startTime,
-            success: true,
-          });
-        }
-
-        // 6. 把 LLM 回复和工具结果加入对话历史
-        messages.push({ role: "assistant", content: llmOutput });
-        messages.push({ role: "user", content: `Observation: ${toolResult}` });
-      } catch (error: any) {
-        const errorMsg = `工具执行错误: ${error.message}`;
-        console.error(errorMsg);
-        // 发送失败的 observation
-        if (onStep) {
-          globalStepIndex++;
-          onStep({
-            type: "observation",
-            content: errorMsg,
-            stepIndex: globalStepIndex,
-            timestamp: Date.now(),
-            success: false,
-          });
-        }
-        messages.push({ role: "assistant", content: llmOutput });
-        messages.push({ role: "user", content: `Observation: ${errorMsg}` });
       }
     } else {
-      // 解析失败，提示 LLM 重新输出
-      console.warn("解析失败，要求 LLM 重新输出");
-      messages.push({ role: "assistant", content: llmOutput });
+      // 既没有内容也没有工具调用，异常情况
+      console.warn("⚠️ LLM 返回空响应，重试");
       messages.push({
         role: "user",
-        content:
-          "请严格按照格式输出：Thought/Action/Action Input 或 Final Answer",
+        content: "请继续分析并回答问题，或调用工具获取更多信息。",
       });
     }
   }
 
   return "抱歉，我无法在有限步骤内完成分析，请尝试更具体的问题。";
+}
+
+// 流式发送答案的辅助函数
+async function streamAnswer(answer: string, onToken: (token: string) => void): Promise<void> {
+  const chunkSize = 3;
+  let charIndex = 0;
+
+  return new Promise((resolve) => {
+    const send = () => {
+      if (charIndex >= answer.length) {
+        resolve();
+        return;
+      }
+      const chunk = answer.slice(charIndex, charIndex + chunkSize);
+      onToken(chunk);
+      charIndex += chunkSize;
+      setTimeout(send, 20);
+    };
+    send();
+  });
 }

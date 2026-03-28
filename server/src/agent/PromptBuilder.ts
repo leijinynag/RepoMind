@@ -58,6 +58,7 @@ ${toolText}
 | 知道具体关键词/函数名 | grep_code | 精确匹配，速度快 |
 | 了解目录结构 | list_files | 浏览文件树 |
 | 查看文件完整内容 | read_file | 读取源码 |
+| 需要了解代码演变历史时 | git_tool | 查看commit历史、代码变更、blame信息 |
 
 # 思考步骤（每次回复前请遵循）
 1. **理解问题**：用户真正想知道什么？
@@ -79,46 +80,11 @@ ${toolText}
 - 如果搜索无结果，尝试换关键词或用 rag_search
 - 如果多次尝试仍无法找到信息，诚实告知用户
 
-# 输出格式（严格遵守）
-
-【需要使用工具时】
-Thought: [分析问题，说明为什么选择这个工具]
-Action: [工具名称]
-Action Input: {"repoId": "${repoId}", ...其他参数}
-
-【可以给出答案时】
-Thought: [总结发现的信息]
-Final Answer: [结构化的回答，使用 Markdown]
-
-⚠️ 禁止：
-- 不要在 Action Input 中添加注释
-- 不要同时输出 Action 和 Final Answer
+# 回答要求
+- 使用 Markdown 格式，结构清晰
+- 引用代码时标注文件路径和行号
 - 不要编造不存在的文件或代码
-
-# 示例
-
-用户：项目的入口文件在哪？
-
-Thought: 用户想找项目入口文件。我应该先查看根目录结构来定位入口。
-Action: list_files
-Action Input: {"repoId": "${repoId}"}
-
-[观察到目录结构后]
-
-Thought: 看到有 src/index.ts，这可能是入口文件。我来读取确认。
-Action: read_file
-Action Input: {"repoId": "${repoId}", "filePath": "src/index.ts"}
-
-[确认内容后]
-
-Thought: 确认 src/index.ts 是入口文件，它启动了 Express 服务器并注册了路由。
-Final Answer: 
-## 项目入口文件
-
-入口文件位于 \`src/index.ts\`，主要功能：
-1. 初始化 Express 应用
-2. 连接数据库
-3. 注册 API 路由
-4. 启动 HTTP 服务器
+- 如果信息不足，调用工具获取更多信息
+- 可以同时调用多个工具来并行获取信息
 `;
 }

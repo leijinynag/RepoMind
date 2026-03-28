@@ -12,15 +12,55 @@ export class DeepSeekClient extends LLMClient {
     options?: ChatOptions,
   ): Promise<ChatResponse> {
     try {
+      // 构建请求体
+      const body: any = {
+        model: "deepseek-chat",
+        messages: messages.map(m => {
+          // 转换消息格式
+          if (m.role === "tool") {
+            return {
+              role: "tool",
+              tool_call_id: m.tool_call_id,
+              content: m.content,
+            };
+          }
+          if (m.role === "assistant" && m.tool_calls) {
+            return {
+              role: "assistant",
+              content: m.content || null,
+              tool_calls: m.tool_calls.map(tc => ({
+                id: tc.id,
+                type: "function",
+                function: {
+                  name: tc.name,
+                  arguments: JSON.stringify(tc.arguments),
+                },
+              })),
+            };
+          }
+          return { role: m.role, content: m.content };
+        }),
+        temperature: options?.temperature || 0.7,
+        max_tokens: options?.maxTokens || 2000,
+        stream: false,
+      };
+
+      // 如果有工具定义，添加到请求体
+      if (options?.tools && options.tools.length > 0) {
+        body.tools = options.tools.map(t => ({
+          type: "function",
+          function: {
+            name: t.name,
+            description: t.description,
+            parameters: t.parameters,
+          },
+        }));
+        body.tool_choice = "auto";
+      }
+
       const res = await axios.post(
         "https://api.deepseek.com/v1/chat/completions",
-        {
-          model: "deepseek-chat",
-          messages: messages,
-          temperature: options?.temperature || 0.7,
-          max_tokens: options?.maxTokens || 2000,
-          stream: false,
-        },
+        body,
         {
           headers: {
             Authorization: `Bearer ${this.apiKey}`,
@@ -29,9 +69,22 @@ export class DeepSeekClient extends LLMClient {
         },
       );
 
-      const content = res.data.choices?.[0]?.message?.content || "";
+      const choice = res.data.choices?.[0]?.message;
+      const content = choice?.content || "";
+      
+      // 解析工具调用
+      let toolCalls: { id: string; name: string; arguments: Record<string, any> }[] | undefined;
+      if (choice?.tool_calls && choice.tool_calls.length > 0) {
+        toolCalls = choice.tool_calls.map((tc: any) => ({
+          id: tc.id,
+          name: tc.function.name,
+          arguments: JSON.parse(tc.function.arguments || "{}"),
+        }));
+      }
+
       return {
         content,
+        toolCalls,
         data: res.data,
       };
     } catch (error: any) {

@@ -1,6 +1,8 @@
 export interface Message {
-  role: "system" | "user" | "assistant";
+  role: "system" | "user" | "assistant" | "tool";
   content: string;
+  tool_call_id?: string;  // tool 消息需要
+  tool_calls?: ToolCall[];  // assistant 消息可能包含
 }
 export interface ChatOptions {
   temperature?: number;
@@ -9,6 +11,7 @@ export interface ChatOptions {
   stream?: boolean;
 }
 export interface ToolCall {
+  id: string;  // 工具调用 ID，用于关联 tool 消息
   name: string;
   arguments: Record<string, any>;
 }
@@ -29,7 +32,7 @@ export abstract class LLMClient {
   ): Promise<ChatResponse>;
   //流式响应
   abstract chatStream(
-    message:Message[],
+    messages:Message[],
     options?:ChatOptions
   ):AsyncGenerator<string,void,unknown>
 }
