@@ -39,8 +39,21 @@ export default function HomePage() {
     if (!addUrl.trim()) return
     setAddLoading(true)
     try {
-      await axios.post('/api/repos/load', { url: addUrl })
-      message.success('仓库添加成功')
+      // 1. 克隆仓库
+      const loadRes = await axios.post('/api/repos/load', { url: addUrl })
+      const repoId = loadRes.data.repoId
+      
+      message.success('仓库克隆成功，正在分析项目...')
+      
+      // 2. 自动分析项目（生成 memory + RAG 索引）
+      try {
+        await axios.post(`/api/repos/${repoId}/analyze`)
+        message.success('项目分析完成，可以开始对话')
+      } catch (analyzeErr: any) {
+        console.error('项目分析失败:', analyzeErr)
+        message.warning('项目分析失败，但仓库已添加，可手动重新分析')
+      }
+      
       setAddModalOpen(false)
       setAddUrl('')
       fetchRepos()
