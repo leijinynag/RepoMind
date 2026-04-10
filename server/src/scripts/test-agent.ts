@@ -18,7 +18,7 @@ async function testAgent() {
     console.log('仓库ID:', repoId);
     console.log('\n开始执行...\n');
 
-    const answer = await runReActLoop(question, repoId, (step) => {
+    const answer = await runReActLoop(question, repoId, [], 'deepseek', (step) => {
       console.log(`\n[${step.type.toUpperCase()}]`);
       console.log(step.content);
       console.log('---');

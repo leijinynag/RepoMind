@@ -21,7 +21,7 @@ async function testAgentWithRAG() {
     console.log('\n--- Agent 执行过程 ---\n');
     
     // 执行 Agent
-    const answer = await runReActLoop(question, repoId, (step: AgentStep) => {
+    const answer = await runReActLoop(question, repoId, [], 'deepseek', (step: AgentStep) => {
       if (step.type === 'thought') {
         console.log('💭 思考:', step.content);
       } else if (step.type === 'action') {

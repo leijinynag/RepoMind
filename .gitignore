@@ -140,3 +140,7 @@ vite.config.ts.timestamp-*
 
 # Cloned repositories (dynamically generated)
 repos/
+.claude
+.ttadk
+.winsurf
+docs/

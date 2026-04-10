@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef } from "react";
 import { AgentStep } from "@/types/agent";
 
 interface SSEOptions {
@@ -12,6 +12,10 @@ export const useSSE = () => {
   const [loading, setLoading] = useState(false);
   const [steps, setSteps] = useState<AgentStep[]>([]);
   const [streamingContent, setStreamingContent] = useState("");
+
+  // 用于批量更新 token 的缓冲区
+  const tokenBufferRef = useRef("");
+  const rafIdRef = useRef<number | null>(null);//确保每帧之调度一次更新
 
   const sendMessage = useCallback(
     async (
@@ -47,17 +51,47 @@ export const useSSE = () => {
           try {
             const data = JSON.parse(jsonStr);
             if (data.type === "token") {
-              setStreamingContent((prev) => prev + data.content);
+              // 累积 token 到缓冲区
+              tokenBufferRef.current += data.content;
+              // 使用 RAF 批量更新，每帧最多渲染一次
+              if (rafIdRef.current === null) {
+                rafIdRef.current = requestAnimationFrame(() => {
+                  setStreamingContent((prev) => prev + tokenBufferRef.current);
+                  tokenBufferRef.current = "";
+                  rafIdRef.current = null;
+                });
+              }
               options?.onToken?.(data.content);
             } else if (data.type === "step") {
+              // 清理缓冲区和 RAF
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              tokenBufferRef.current = "";
               setStreamingContent("");
               setSteps((prev) => [...prev, data.step]);
               options?.onStep?.(data.step);
             } else if (data.type === "answer") {
+              // 确保最后的 token 被刷新
+              if (tokenBufferRef.current) {
+                setStreamingContent((prev) => prev + tokenBufferRef.current);
+                tokenBufferRef.current = "";
+              }
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
               setStreamingContent("");
               options?.onAnswer?.(data.content);
               setLoading(false);
             } else if (data.type === "error") {
+              // 清理缓冲区和 RAF
+              if (rafIdRef.current !== null) {
+                cancelAnimationFrame(rafIdRef.current);
+                rafIdRef.current = null;
+              }
+              tokenBufferRef.current = "";
               setStreamingContent("");
               options?.onError?.(data.content);
               setLoading(false);
