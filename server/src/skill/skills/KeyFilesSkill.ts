@@ -2,6 +2,7 @@ import { CodebaseAnalysisService } from "../../analysis/CodebaseAnalysisService"
 import { BaseSkill } from "../base/BaseSkill";
 import { SkillContext } from "../base/SkillContext";
 import { SkillInput, SkillProgressEvent } from "../base/types";
+import { SkillMetadata } from "../planner/SkillMetadata";
 
 // 第三阶段 Skill：补齐“先读哪些文件”这类对新用户最实用的信息。
 export class KeyFilesSkill extends BaseSkill {
@@ -16,6 +17,23 @@ export class KeyFilesSkill extends BaseSkill {
   };
 
   private analysisService = new CodebaseAnalysisService();
+
+  getMetadata(): SkillMetadata {
+    return {
+      id: this.definition.id,
+      name: this.definition.name,
+      description: this.definition.description,
+      useCases: [
+        "告诉用户优先阅读哪些文件",
+        "快速建立阅读顺序",
+        "新仓库导读",
+      ],
+      dependsOn: this.definition.dependsOn,
+      outputFields: ["keyFiles"],
+      tags: ["overview", "guide", "reading"],
+      cost: "low",
+    };
+  }
 
   getSystemPrompt(): string {
     return "你是代码导读助手，请输出结构化 JSON。";

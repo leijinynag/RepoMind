@@ -102,7 +102,9 @@ export class WorkflowEngine {
       );
 
       // 存入上下文
-      context.set(skillId, output);
+      if (output.success) {
+        context.set(skillId, output);
+      }
 
       // 记录结果
       skillResults[skillId] = {

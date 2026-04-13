@@ -1,6 +1,6 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Card, Row, Col, Typography, Empty, Spin, Tag, Button, Modal, Input, message } from 'antd'
+import { Card, Row, Col, Typography, Empty, Spin, Tag, Button, Modal, Input, message, Progress, Space } from 'antd'
 import { GithubOutlined, FileOutlined, PlusOutlined, DeleteOutlined, MessageOutlined } from '@ant-design/icons'
 import axios from 'axios'
 
@@ -12,17 +12,48 @@ interface Repo {
   fileCount: number
 }
 
+interface WorkflowSkillResult {
+  status: 'pending' | 'running' | 'completed' | 'failed'
+  error?: string
+}
+
+interface WorkflowRun {
+  runId: string
+  status: 'running' | 'completed' | 'failed'
+  skillResults: Record<string, WorkflowSkillResult>
+  error?: string
+}
+
+const skillNameMap: Record<string, string> = {
+  project_overview: '项目概览',
+  architecture_summary: '架构摘要',
+  key_files: '关键文件',
+}
+
 export default function HomePage() {
   const [repos, setRepos] = useState<Repo[]>([])
   const [loading, setLoading] = useState(true)
   const [addModalOpen, setAddModalOpen] = useState(false)
   const [addUrl, setAddUrl] = useState('')
   const [addLoading, setAddLoading] = useState(false)
+  const [workflowRepoId, setWorkflowRepoId] = useState<string | null>(null)
+  const [workflowRun, setWorkflowRun] = useState<WorkflowRun | null>(null)
+  const pollTimerRef = useRef<number | null>(null)
   const navigate = useNavigate()
 
   useEffect(() => {
     fetchRepos()
+    return () => {
+      stopPolling()
+    }
   }, [])
+
+  const stopPolling = () => {
+    if (pollTimerRef.current !== null) {
+      window.clearInterval(pollTimerRef.current)
+      pollTimerRef.current = null
+    }
+  }
 
   const fetchRepos = async () => {
     try {
@@ -35,32 +66,60 @@ export default function HomePage() {
     }
   }
 
+  const fetchWorkflowStatus = async (repoId: string) => {
+    const res = await axios.get(`/api/workflows/${repoId}/status`)
+    const run = res.data.run as WorkflowRun
+    setWorkflowRun(run)
+
+    if (run.status === 'completed') {
+      stopPolling()
+      setAddLoading(false)
+      message.success('项目分析完成，可以开始对话')
+      setAddModalOpen(false)
+      setAddUrl('')
+      setWorkflowRepoId(null)
+      setWorkflowRun(null)
+      fetchRepos()
+    } else if (run.status === 'failed') {
+      stopPolling()
+      setAddLoading(false)
+      message.warning(run.error || '项目分析失败，但仓库已添加')
+      fetchRepos()
+    }
+  }
+
+  const startWorkflowPolling = (repoId: string) => {
+    stopPolling()
+    void fetchWorkflowStatus(repoId)
+    pollTimerRef.current = window.setInterval(() => {
+      void fetchWorkflowStatus(repoId)
+    }, 1500)
+  }
+
   const handleAddRepo = async () => {
     if (!addUrl.trim()) return
     setAddLoading(true)
+    setWorkflowRun(null)
     try {
-      // 1. 克隆仓库
       const loadRes = await axios.post('/api/repos/load', { url: addUrl })
-      const repoId = loadRes.data.repoId
-      
+      const repoId = loadRes.data.repoId as string
+      setWorkflowRepoId(repoId)
+
       message.success('仓库克隆成功，正在分析项目...')
-      
-      // 2. 自动分析项目（生成 memory + RAG 索引）
-      try {
-        await axios.post(`/api/repos/${repoId}/analyze`)
-        message.success('项目分析完成，可以开始对话')
-      } catch (analyzeErr: any) {
-        console.error('项目分析失败:', analyzeErr)
-        message.warning('项目分析失败，但仓库已添加，可手动重新分析')
-      }
-      
-      setAddModalOpen(false)
-      setAddUrl('')
-      fetchRepos()
+
+      const workflowRes = await axios.post(`/api/workflows/${repoId}/run`)
+      setWorkflowRun({
+        runId: workflowRes.data.runId,
+        status: 'running',
+        skillResults: {},
+      })
+      startWorkflowPolling(repoId)
     } catch (err: any) {
-      message.error(err.response?.data?.error || '添加失败')
-    } finally {
+      stopPolling()
       setAddLoading(false)
+      setWorkflowRepoId(null)
+      setWorkflowRun(null)
+      message.error(err.response?.data?.error || '添加失败')
     }
   }
 
@@ -88,6 +147,19 @@ export default function HomePage() {
     navigate(`/chat/${repoId}`)
   }
 
+  const handleCloseModal = () => {
+    if (addLoading) return
+    stopPolling()
+    setAddModalOpen(false)
+    setAddUrl('')
+    setWorkflowRepoId(null)
+    setWorkflowRun(null)
+  }
+
+  const skillEntries = Object.entries(workflowRun?.skillResults || {})
+  const completedCount = skillEntries.filter(([, skill]) => skill.status === 'completed').length
+  const progressPercent = skillEntries.length > 0 ? Math.round((completedCount / skillEntries.length) * 100) : 0
+
   if (loading) {
     return (
       <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -98,7 +170,6 @@ export default function HomePage() {
 
   return (
     <div className="home-page">
-      {/* 头部 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 24 }}>
         <Typography.Title level={4} style={{ margin: 0 }}>
           My Repositories
@@ -112,7 +183,6 @@ export default function HomePage() {
         </Button>
       </div>
 
-      {/* 仓库卡片列表 */}
       {repos.length === 0 ? (
         <Empty
           image={Empty.PRESENTED_IMAGE_SIMPLE}
@@ -179,18 +249,16 @@ export default function HomePage() {
         </Row>
       )}
 
-      {/* 添加仓库弹窗 */}
       <Modal
         title="Add GitHub Repository"
         open={addModalOpen}
         onOk={handleAddRepo}
-        onCancel={() => {
-          setAddModalOpen(false)
-          setAddUrl('')
-        }}
-        confirmLoading={addLoading}
-        okText="Add"
+        onCancel={handleCloseModal}
+        confirmLoading={addLoading && !workflowRepoId}
+        okText={addLoading ? 'Running...' : 'Add'}
         cancelText="Cancel"
+        okButtonProps={{ disabled: addLoading }}
+        cancelButtonProps={{ disabled: addLoading }}
       >
         <Input
           placeholder="https://github.com/user/repo"
@@ -198,7 +266,33 @@ export default function HomePage() {
           onChange={(e) => setAddUrl(e.target.value)}
           onPressEnter={handleAddRepo}
           style={{ marginTop: 16 }}
+          disabled={addLoading}
         />
+
+        {workflowRepoId && (
+          <div style={{ marginTop: 20 }}>
+            <Space direction="vertical" size={12} style={{ width: '100%' }}>
+              <div>
+                <Typography.Text strong>分析进度</Typography.Text>
+                <Typography.Text type="secondary" style={{ marginLeft: 8 }}>
+                  {workflowRun?.status === 'failed' ? '失败' : workflowRun?.status === 'completed' ? '已完成' : '进行中'}
+                </Typography.Text>
+              </div>
+              <Progress percent={progressPercent} status={workflowRun?.status === 'failed' ? 'exception' : undefined} />
+              {skillEntries.map(([skillId, skill]) => (
+                <div key={skillId} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <Typography.Text>{skillNameMap[skillId] || skillId}</Typography.Text>
+                  <Tag color={skill.status === 'completed' ? 'green' : skill.status === 'failed' ? 'red' : skill.status === 'running' ? 'blue' : 'default'}>
+                    {skill.status}
+                  </Tag>
+                </div>
+              ))}
+              {workflowRun?.error && (
+                <Typography.Text type="danger">{workflowRun.error}</Typography.Text>
+              )}
+            </Space>
+          </div>
+        )}
       </Modal>
     </div>
   )

@@ -2,6 +2,7 @@ import { CodebaseAnalysisService } from "../../analysis/CodebaseAnalysisService"
 import { BaseSkill } from "../base/BaseSkill";
 import { SkillContext } from "../base/SkillContext";
 import { SkillInput, SkillProgressEvent } from "../base/types";
+import { SkillMetadata } from "../planner/SkillMetadata";
 
 // 第二阶段 Skill：消费 project_overview 的结构化结果，再补一层摘要语义。
 export class ArchitectureSummarySkill extends BaseSkill {
@@ -16,6 +17,23 @@ export class ArchitectureSummarySkill extends BaseSkill {
   };
 
   private analysisService = new CodebaseAnalysisService();
+
+  getMetadata(): SkillMetadata {
+    return {
+      id: this.definition.id,
+      name: this.definition.name,
+      description: this.definition.description,
+      useCases: [
+        "总结项目架构与技术栈",
+        "快速理解项目整体定位",
+        "为导读类问题提供摘要语义",
+      ],
+      dependsOn: this.definition.dependsOn,
+      outputFields: ["description", "type", "techStack", "architecture"],
+      tags: ["overview", "architecture", "summary"],
+      cost: "low",
+    };
+  }
 
   getSystemPrompt(): string {
     return "你是项目架构分析专家，请输出结构化 JSON。";
@@ -41,19 +59,24 @@ export class ArchitectureSummarySkill extends BaseSkill {
       throw new Error("缺少 project_overview 输出");
     }
 
+    const packageJson = overview.packageJson || {};
+    const stats = overview.stats || { totalFiles: 0, totalLines: 0, languages: {} };
+    const externalDependencies = overview.externalDependencies || [];
+    const techStackCandidates = overview.techStackCandidates || [];
+
     const summary = await this.analysisService.generateSummary(
       {
-        name: overview.packageJson?.name,
-        description: overview.packageJson?.description,
+        name: packageJson.name,
+        description: packageJson.description,
         dependencies: Object.fromEntries(
-          (overview.externalDependencies || []).map((dep: any) => [dep.name, dep.version]),
+          externalDependencies.map((dep: any) => [dep.name, dep.version]),
         ),
         // 这里把候选技术栈映射成 devDependencies 形态，只是为了复用现有摘要逻辑。
         devDependencies: Object.fromEntries(
-          (overview.techStackCandidates || []).map((dep: string) => [dep, "*"]),
+          techStackCandidates.map((dep: string) => [dep, "*"]),
         ),
       },
-      overview.stats,
+      stats,
     );
 
     return summary;

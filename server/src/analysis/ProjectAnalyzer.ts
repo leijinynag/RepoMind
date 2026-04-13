@@ -18,6 +18,11 @@ import { projectReportWorkflow } from "../skill/workflows";
 import { ProjectOverviewSkill } from "../skill/skills/ProjectOverviewSkill";
 import { ArchitectureSummarySkill } from "../skill/skills/ArchitectureSummarySkill";
 import { KeyFilesSkill } from "../skill/skills/KeyFilesSkill";
+import { StructureSummarySkill } from "../skill/skills/StructureSummarySkill";
+import { ApiSurfaceSummarySkill } from "../skill/skills/ApiSurfaceSummarySkill";
+import { FrontendApiTraceSkill } from "../skill/skills/FrontendApiTraceSkill";
+import { BackendRouteTraceSkill } from "../skill/skills/BackendRouteTraceSkill";
+import { BusinessFlowSummarySkill } from "../skill/skills/BusinessFlowSummarySkill";
 
 function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -52,6 +57,11 @@ export class ProjectAnalyzer {
       new ProjectOverviewSkill(),
       new ArchitectureSummarySkill(),
       new KeyFilesSkill(),
+      new StructureSummarySkill(),
+      new ApiSurfaceSummarySkill(),
+      new FrontendApiTraceSkill(),
+      new BackendRouteTraceSkill(),
+      new BusinessFlowSummarySkill(),
     ]);
 
     this.workflowEngine = new WorkflowEngine(

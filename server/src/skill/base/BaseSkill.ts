@@ -4,6 +4,7 @@ import {
   SkillOutput,
   SkillProgressEvent,
 } from "./types";
+import { SkillMetadata } from "../planner/SkillMetadata";
 import { SkillContext } from "./SkillContext";
 //Skill抽象基类
 export abstract class BaseSkill {
@@ -52,6 +53,23 @@ export abstract class BaseSkill {
   // 获取 Skill 名称（便捷方法）
   get name(): string {
     return this.definition.name;
+  }
+  // 默认元数据，可由子类覆写 getMetadata() 强化 planner 选择信号。
+  get metadata(): SkillMetadata {
+    return this.getMetadata();
+  }
+
+  getMetadata(): SkillMetadata {
+    return {
+      id: this.definition.id,
+      name: this.definition.name,
+      description: this.definition.description,
+      useCases: [],
+      dependsOn: this.definition.dependsOn,
+      outputFields: Object.keys(this.definition.outputSchema.properties || {}),
+      tags: [],
+      cost: "low",
+    };
   }
   // 检查依赖是否满足
   checkDependencies(context: SkillContext): { satisfied: boolean; missing: string[] } {

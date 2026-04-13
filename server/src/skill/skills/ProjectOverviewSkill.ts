@@ -2,6 +2,7 @@ import { CodebaseAnalysisService } from "../../analysis/CodebaseAnalysisService"
 import { BaseSkill } from "../base/BaseSkill";
 import { SkillContext } from "../base/SkillContext";
 import { SkillInput, SkillProgressEvent } from "../base/types";
+import { SkillMetadata } from "../planner/SkillMetadata";
 
 // 第一阶段的基础 Skill：尽量用确定性逻辑拿到 repo 元信息、统计和依赖。
 export class ProjectOverviewSkill extends BaseSkill {
@@ -16,6 +17,31 @@ export class ProjectOverviewSkill extends BaseSkill {
   };
 
   private analysisService = new CodebaseAnalysisService();
+
+  getMetadata(): SkillMetadata {
+    return {
+      id: this.definition.id,
+      name: this.definition.name,
+      description: this.definition.description,
+      useCases: [
+        "分析项目基础信息和代码规模",
+        "识别仓库类型与顶层结构",
+        "为后续结构类技能提供基础输入",
+      ],
+      dependsOn: this.definition.dependsOn,
+      outputFields: [
+        "repo",
+        "packageJson",
+        "stats",
+        "externalDependencies",
+        "topLevelEntries",
+        "techStackCandidates",
+        "projectType",
+      ],
+      tags: ["overview", "foundation", "structure"],
+      cost: "low",
+    };
+  }
 
   getSystemPrompt(): string {
     return "你是项目分析专家，请输出结构化 JSON。";
