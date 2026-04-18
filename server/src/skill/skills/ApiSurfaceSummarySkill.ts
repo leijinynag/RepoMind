@@ -31,6 +31,10 @@ export class ApiSurfaceSummarySkill extends BaseSkill {
       outputFields: ["backendRoutes", "frontendClients", "apiPatterns", "summary"],
       tags: ["api", "frontend", "backend"],
       cost: "medium",
+      suitableFor: ["trace_api", "trace_flow", "architecture"],
+      outputKinds: ["routes", "clients", "patterns"],
+      useWhen: "需要了解项目的 API 层面结构、分析前后端接口分布时",
+      avoidWhen: "项目没有 API 相关代码时",
     };
   }
 

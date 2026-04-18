@@ -1,10 +1,15 @@
 import { v4 as uuidv4 } from "uuid";
-import { WorkflowRun } from "../../models/workflowRun.model";
+import { WorkflowRun, PlannerDecisionRecord } from "../../models/workflowRun.model";
 import { WorkflowEvent, WorkflowResult } from "./WorkflowConfig";
 
 // 负责把内存中的工作流事件同步到 WorkflowRun 文档，方便后续查询和续跑。
 export class WorkflowRunStore {
-  async create(workflowId: string, repoId: string, skillIds: string[]) {
+  async create(
+    workflowId: string,
+    repoId: string,
+    skillIds: string[],
+    plannerDecision?: PlannerDecisionRecord,
+  ) {
     const initialSkillResults = Object.fromEntries(
       skillIds.map((skillId) => [skillId, { status: "pending" }]),
     );
@@ -15,6 +20,7 @@ export class WorkflowRunStore {
       repoId,
       status: "running",
       skillResults: initialSkillResults,
+      plannerDecision,
       startedAt: new Date(),
     });
 

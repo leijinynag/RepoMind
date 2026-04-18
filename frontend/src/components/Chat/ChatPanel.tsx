@@ -1,11 +1,12 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useChatStore, ModelType } from '@/stores/chatStore'
 import { useSSE } from '@/hooks/useSSE'
 import { MessageBubble } from './MessageBubble'
 import { InputBar } from './InputBar'
+import { ModeSelector, ChatMode } from './ModeSelector'
 import { AgentStep } from '@/types/agent'
-import { Card, Spin, Timeline, Typography, Select } from 'antd'
-import { RobotOutlined, BulbOutlined, ToolOutlined, EyeOutlined, LoadingOutlined } from '@ant-design/icons'
+import { Card, Spin, Timeline, Typography, Select, Progress, Tag } from 'antd'
+import { RobotOutlined, BulbOutlined, ToolOutlined, EyeOutlined, LoadingOutlined, ThunderboltOutlined } from '@ant-design/icons'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -39,6 +40,15 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
     setCurrentModel,
   } = useChatStore()
   const messages = getMessages(repoId);
+
+  // 增强模式状态
+  const [chatMode, setChatMode] = useState<ChatMode>('normal')
+  const [workflowProgress, setWorkflowProgress] = useState<{
+    total: number
+    completed: number
+    currentSkill: string | null
+  } | null>(null)
+
   useEffect(()=>{
     setCurrentRepo(repoId);
   },[repoId,setCurrentRepo]);
@@ -58,6 +68,7 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
     setLoading(true);
     clearSteps();
     clearDisplaySteps();  // 新对话开始时清除上次的显示
+    setWorkflowProgress(null);
 
     const history = messages.map((m) => ({
       role: m.role,
@@ -67,6 +78,26 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
     let collectedSteps: AgentStep[] = [];
 
     await sendMessage(repoId, message, history, currentModel, {
+      mode: chatMode,  // 传递模式参数
+      onPlannerDecision: (decision: any) => {
+        // Planner 决策回调
+        if (decision.mode === 'run_workflow') {
+          addStep({
+            type: 'thought',
+            content: `增强模式：选择 ${decision.skillIds.length} 个技能进行分析`,
+            stepIndex: Date.now(),
+            timestamp: Date.now(),
+          });
+        }
+      },
+      onWorkflowProgress: (progress: any) => {
+        // 工作流进度回调
+        setWorkflowProgress({
+          total: progress.total,
+          completed: progress.completed,
+          currentSkill: progress.current,
+        });
+      },
       onStep: (step: AgentStep) => {
         addStep(step);
         collectedSteps.push(step);
@@ -76,33 +107,65 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
         setDisplaySteps(collectedSteps);  // 保存到 displaySteps 用于持续显示
         clearSteps();
         setLoading(false);
+        setWorkflowProgress(null);
       },
       onError: (error: string) => {
         addMessage(repoId, { role: 'assistant', content: `❌ 错误: ${error}` });
         setDisplaySteps(collectedSteps);  // 错误时也保存，方便调试
         clearSteps();
         setLoading(false);
+        setWorkflowProgress(null);
       },
     });
   };
 
   return (
     <div className="chat-panel">
-      {/* 头部：标题 + 模型选择 */}
+      {/* 头部：标题 + 模型选择 + 模式选择 */}
       <div className="chat-panel-header">
         <Typography.Text className="chat-panel-header-title">
           AI Chat
         </Typography.Text>
-        <Select
-          size="small"
-          variant="borderless"
-          value={currentModel}
-          onChange={setCurrentModel}
-          options={MODEL_OPTIONS}
-          style={{ width: 120 }}
-          disabled={loading}
-        />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <ModeSelector
+            mode={chatMode}
+            onChange={setChatMode}
+            disabled={loading}
+          />
+          <Select
+            size="small"
+            variant="borderless"
+            value={currentModel}
+            onChange={setCurrentModel}
+            options={MODEL_OPTIONS}
+            style={{ width: 120 }}
+            disabled={loading}
+          />
+        </div>
       </div>
+
+      {/* 增强模式工作流进度 */}
+      {loading && chatMode === 'enhanced' && workflowProgress && (
+        <div style={{ padding: '8px 16px', background: 'var(--bg-secondary)', borderBottom: '1px solid var(--border-primary)' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 4 }}>
+            <ThunderboltOutlined style={{ color: 'var(--accent)' }} />
+            <Typography.Text style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+              工作流分析中...
+            </Typography.Text>
+            {workflowProgress.currentSkill && (
+              <Tag color="blue" style={{ fontSize: 11, padding: '0 4px', margin: 0 }}>
+                {workflowProgress.currentSkill}
+              </Tag>
+            )}
+          </div>
+          <Progress
+            percent={Math.round((workflowProgress.completed / workflowProgress.total) * 100)}
+            size="small"
+            showInfo={false}
+            strokeColor="var(--accent)"
+          />
+        </div>
+      )}
 
       {/* 消息列表 */}
       <div className="chat-messages">

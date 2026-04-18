@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { Card, Row, Col, Typography, Empty, Spin, Tag, Button, Modal, Input, message, Progress, Space } from 'antd'
-import { GithubOutlined, FileOutlined, PlusOutlined, DeleteOutlined, MessageOutlined } from '@ant-design/icons'
+import { GithubOutlined, FileOutlined, PlusOutlined, DeleteOutlined, MessageOutlined, FileTextOutlined } from '@ant-design/icons'
 import axios from 'axios'
 
 interface Repo {
@@ -27,7 +27,14 @@ interface WorkflowRun {
 const skillNameMap: Record<string, string> = {
   project_overview: '项目概览',
   architecture_summary: '架构摘要',
-  key_files: '关键文件',
+  key_files: '关键文件锚点',
+  structure_summary: '结构摘要',
+  dev_guide: '开发指南',
+  api_surface_summary: 'API 层面分析',
+  frontend_api_trace: '前端 API 追踪',
+  backend_route_trace: '后端路由追踪',
+  business_flow_summary: '业务流程总结',
+  entry_flow: '入口流程分析',
 }
 
 export default function HomePage() {
@@ -201,6 +208,16 @@ export default function HomePage() {
                 style={{ height: '100%' }}
                 onClick={() => handleCardClick(repo.repoId)}
                 actions={[
+                  <Button
+                    type="text"
+                    icon={<FileTextOutlined />}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      navigate(`/report/${repo.repoId}`)
+                    }}
+                  >
+                    Report
+                  </Button>,
                   <Button
                     type="text"
                     icon={<MessageOutlined />}

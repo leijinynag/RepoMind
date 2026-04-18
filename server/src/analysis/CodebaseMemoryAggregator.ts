@@ -6,7 +6,12 @@ export class CodebaseMemoryAggregator {
   async aggregate(repoId: string, result: WorkflowResult) {
     const projectOverview = result.skillResults.project_overview?.data || {};
     const architectureSummary = result.skillResults.architecture_summary?.data || {};
-    const keyFiles = result.skillResults.key_files?.data?.keyFiles || [];
+    const structureSummary = result.skillResults.structure_summary?.data || null;
+    const devGuide = result.skillResults.dev_guide?.data || null;
+    const keyFilesData = result.skillResults.key_files?.data || null;
+
+    // 将 key_files 的 anchors 格式转换为存储格式
+    const keyFiles = keyFilesData?.anchors || [];
 
     const existing = await CodebaseMemory.findOne({ repoId });
 
@@ -27,7 +32,7 @@ export class CodebaseMemoryAggregator {
       existing?.overview?.type ||
       "库";
 
-    const update = {
+    const update: any = {
       $set: {
         repoId,
         overview: {
@@ -40,22 +45,48 @@ export class CodebaseMemoryAggregator {
           architectureSummary.architecture ||
           existing?.architectureSummary ||
           "",
-        // 当前工作流还没产出这些字段，因此保留历史值，避免回写时被清空。
-        modules: existing?.modules || [],
-        dependencies: {
-          external:
-            projectOverview.externalDependencies ||
-            existing?.dependencies?.external ||
-            [],
-          internal: existing?.dependencies?.internal || [],
-        },
-        stats: projectOverview.stats || existing?.stats,
-        keyFiles: keyFiles.length > 0 ? keyFiles : existing?.keyFiles || [],
-        issues: existing?.issues || [],
-        generatedAt: new Date(),
       },
       $inc: { version: 1 },
     };
+
+    // 只在有数据时更新 structureSummary
+    if (structureSummary) {
+      update.$set.structureSummary = {
+        areas: structureSummary.areas || [],
+        entrypoints: structureSummary.entrypoints || [],
+        boundaries: (structureSummary.boundaries || []).map((b: any) => b.name || b),
+        summary: structureSummary.summary || "",
+      };
+    }
+
+    // 只在有数据时更新 devGuide
+    if (devGuide) {
+      update.$set.devGuide = {
+        startup: devGuide.startup || "",
+        scripts: devGuide.scripts || [],
+        envHints: devGuide.envHints || [],
+        keyPaths: devGuide.keyPaths || [],
+        pitfalls: devGuide.pitfalls || [],
+      };
+    }
+
+    // 只在有数据时更新 keyFiles
+    if (keyFiles.length > 0) {
+      update.$set.keyFiles = keyFiles;
+    }
+
+    // 保留历史值，避免回写时被清空
+    update.$set.modules = existing?.modules || [];
+    update.$set.dependencies = {
+      external:
+        projectOverview.externalDependencies ||
+        existing?.dependencies?.external ||
+        [],
+      internal: existing?.dependencies?.internal || [],
+    };
+    update.$set.stats = projectOverview.stats || existing?.stats;
+    update.$set.issues = existing?.issues || [];
+    update.$set.generatedAt = new Date();
 
     return CodebaseMemory.findOneAndUpdate({ repoId }, update, {
       upsert: true,

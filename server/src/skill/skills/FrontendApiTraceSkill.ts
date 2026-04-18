@@ -30,6 +30,10 @@ export class FrontendApiTraceSkill extends BaseSkill {
       outputFields: ["traces", "unresolved", "summary"],
       tags: ["frontend", "api", "trace"],
       cost: "medium",
+      suitableFor: ["trace_api", "trace_flow", "debug"],
+      outputKinds: ["traces", "evidence"],
+      useWhen: "用户询问前端如何发起 API 请求、需要追踪前端调用链时",
+      avoidWhen: "项目没有前端代码、只需要后端分析时",
     };
   }
   getSystemPrompt(): string {

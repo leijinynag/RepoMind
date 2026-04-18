@@ -31,6 +31,10 @@ export class BusinessFlowSummarySkill extends BaseSkill {
       outputFields: ["flows", "summary"],
       tags: ["flow", "trace", "business"],
       cost: "high",
+      suitableFor: ["trace_flow", "trace_api"],
+      outputKinds: ["flows", "evidence"],
+      useWhen: "需要理解完整的业务流程、追踪端到端调用链时",
+      avoidWhen: "项目缺少前端或后端代码时",
     };
   }
 

@@ -31,6 +31,10 @@ export class BackendRouteTraceSkill extends BaseSkill {
       outputFields: ["traces", "unresolved", "summary"],
       tags: ["backend", "api", "trace"],
       cost: "medium",
+      suitableFor: ["trace_api", "trace_flow", "debug"],
+      outputKinds: ["traces", "evidence", "handlers"],
+      useWhen: "需要了解后端路由处理逻辑、追踪后端调用链时",
+      avoidWhen: "项目没有后端代码、只需要前端分析时",
     };
   }
 

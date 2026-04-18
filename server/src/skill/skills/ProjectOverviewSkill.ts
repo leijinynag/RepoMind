@@ -40,6 +40,10 @@ export class ProjectOverviewSkill extends BaseSkill {
       ],
       tags: ["overview", "foundation", "structure"],
       cost: "low",
+      suitableFor: ["all_questions", "initial_analysis"],
+      outputKinds: ["overview", "stats", "dependencies"],
+      useWhen: "任何分析任务的起点，需要基础项目信息时",
+      avoidWhen: "已经获取过项目概览且无变更时",
     };
   }
 

@@ -2,11 +2,28 @@ import { useState, useCallback, useRef } from "react";
 import { AgentStep } from "@/types/agent";
 
 interface SSEOptions {
+  mode?: "normal" | "enhanced";
   onStep?: (step: AgentStep) => void;
   onToken?: (token: string) => void;
   onAnswer?: (answer: string) => void;
   onError?: (error: string) => void;
+  onPlannerDecision?: (decision: any) => void;
+  onWorkflowProgress?: (progress: any) => void;
 }
+
+// Helper to create a step with required fields
+const createStep = (
+  type: AgentStep["type"],
+  content: string,
+  stepIndex: number,
+  extra?: Partial<AgentStep>
+): AgentStep => ({
+  type,
+  content,
+  stepIndex,
+  timestamp: Date.now(),
+  ...extra,
+});
 
 export const useSSE = () => {
   const [loading, setLoading] = useState(false);
@@ -16,6 +33,7 @@ export const useSSE = () => {
   // 用于批量更新 token 的缓冲区
   const tokenBufferRef = useRef("");
   const rafIdRef = useRef<number | null>(null);//确保每帧之调度一次更新
+  const stepIndexRef = useRef(0);
 
   const sendMessage = useCallback(
     async (
@@ -28,6 +46,7 @@ export const useSSE = () => {
       setLoading(true);
       setSteps([]);
       setStreamingContent("");
+      stepIndexRef.current = 0;
 
       try {
         const response = await fetch(`/api/chat/${repoId}/stream`, {
@@ -37,6 +56,7 @@ export const useSSE = () => {
             message,
             history: history.slice(-10),
             model,
+            mode: options?.mode || "normal",
           }),
         });
 
@@ -44,13 +64,61 @@ export const useSSE = () => {
         const decoder = new TextDecoder();
         let buffer = "";
 
+        const getNextStepIndex = () => stepIndexRef.current++;
+
         const processLine = (line: string) => {
           if (!line.startsWith("data: ")) return;
           const jsonStr = line.slice(6).trim();
           if (!jsonStr || jsonStr === "[DONE]") return;
           try {
             const data = JSON.parse(jsonStr);
-            if (data.type === "token") {
+
+            // 增强模式事件
+            if (data.type === "planning") {
+              // 规划中
+              setSteps((prev) => [...prev, createStep("thought", data.message || "正在分析问题...", getNextStepIndex())]);
+            } else if (data.type === "planner_decision") {
+              // Planner 决策
+              options?.onPlannerDecision?.(data.decision);
+              if (data.decision?.mode === "run_workflow") {
+                setSteps((prev) => [...prev, createStep("thought", `选择 ${data.decision.skillIds?.length || 0} 个技能: ${data.decision.reason || ""}`, getNextStepIndex())]);
+              }
+            } else if (data.type === "mode") {
+              // 模式切换
+              if (data.mode === "enhanced_workflow") {
+                setSteps((prev) => [...prev, createStep("thought", "启动增强模式工作流...", getNextStepIndex())]);
+              }
+            } else if (data.type === "workflow_start") {
+              // 工作流开始
+              const skills = data.workflow?.skills || [];
+              setSteps((prev) => [...prev, createStep("thought", `工作流包含 ${skills.length} 个技能`, getNextStepIndex())]);
+            } else if (data.type === "workflow_event") {
+              // 工作流事件
+              const event = data.event;
+              if (event?.type === "skill_start") {
+                options?.onWorkflowProgress?.({
+                  type: "skill_start",
+                  skillId: event.skillId,
+                });
+              } else if (event?.type === "skill_complete") {
+                options?.onWorkflowProgress?.({
+                  type: "skill_complete",
+                  skillId: event.skillId,
+                  data: event.data,
+                });
+                setSteps((prev) => [...prev, createStep("observation", `技能 ${event.skillId} 完成`, getNextStepIndex())]);
+              } else if (event?.type === "progress") {
+                options?.onWorkflowProgress?.({
+                  type: "progress",
+                  total: event.progress?.total,
+                  completed: event.progress?.completed,
+                  current: event.progress?.current,
+                });
+              }
+            } else if (data.type === "workflow_complete") {
+              // 工作流完成
+              setSteps((prev) => [...prev, createStep("observation", "工作流分析完成，正在生成回答...", getNextStepIndex())]);
+            } else if (data.type === "token") {
               // 累积 token 到缓冲区
               tokenBufferRef.current += data.content;
               // 使用 RAF 批量更新，每帧最多渲染一次
@@ -70,8 +138,13 @@ export const useSSE = () => {
               }
               tokenBufferRef.current = "";
               setStreamingContent("");
-              setSteps((prev) => [...prev, data.step]);
-              options?.onStep?.(data.step);
+              const step = {
+                ...data.step,
+                stepIndex: data.step.stepIndex ?? getNextStepIndex(),
+                timestamp: data.step.timestamp ?? Date.now(),
+              };
+              setSteps((prev) => [...prev, step]);
+              options?.onStep?.(step);
             } else if (data.type === "answer") {
               // 确保最后的 token 被刷新
               if (tokenBufferRef.current) {

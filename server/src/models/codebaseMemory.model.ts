@@ -10,15 +10,30 @@ export interface ICodebaseMemory extends Document {
     type: string;
   };
 
-  architectureSummary: string; //架构摘要（LLM生成）
-  //模块列表
+  architectureSummary: string;
+
+  structureSummary?: {
+    areas: Array<{ path: string; role: string }>;
+    entrypoints: Array<{ path: string; reason: string }>;
+    boundaries: string[];
+    summary: string;
+  };
+
+  devGuide?: {
+    startup: string;
+    scripts: Array<{ name: string; command: string; description: string }>;
+    envHints: string[];
+    keyPaths: string[];
+    pitfalls: string[];
+  };
+
   modules: Array<{
     name: string;
     path: string;
     description: string;
     exports: string[];
   }>;
-  //依赖关系
+
   dependencies: {
     external: Array<{
       name: string;
@@ -30,7 +45,7 @@ export interface ICodebaseMemory extends Document {
       to: string;
     }>;
   };
-  //代码统计
+
   stats: {
     totalFiles: number;
     totalLines: number;
@@ -39,10 +54,10 @@ export interface ICodebaseMemory extends Document {
 
   keyFiles: Array<{
     path: string;
-    role: string;
-    summary: string;
+    reason: string;
+    confidence: string;
   }>;
-  //发现的问题
+
   issues: Array<{
     type: string;
     severity: "high" | "medium" | "low";
@@ -50,7 +65,7 @@ export interface ICodebaseMemory extends Document {
     description: string;
     suggestion: string;
   }>;
-  //元信息
+
   generatedAt: Date;
   version: number;
 }
@@ -66,6 +81,21 @@ const CodebaseMemorySchema = new Schema<ICodebaseMemory>({
   },
 
   architectureSummary: { type: String, required: true },
+
+  structureSummary: {
+    areas: [{ path: String, role: String }],
+    entrypoints: [{ path: String, reason: String }],
+    boundaries: [{ type: String }],
+    summary: String,
+  },
+
+  devGuide: {
+    startup: String,
+    scripts: [{ name: String, command: String, description: String }],
+    envHints: [{ type: String }],
+    keyPaths: [{ type: String }],
+    pitfalls: [{ type: String }],
+  },
 
   modules: [
     {
@@ -101,8 +131,8 @@ const CodebaseMemorySchema = new Schema<ICodebaseMemory>({
   keyFiles: [
     {
       path: { type: String, required: true },
-      role: { type: String, required: true },
-      summary: { type: String, required: true },
+      reason: { type: String, required: true },
+      confidence: { type: String, required: true },
     },
   ],
 
