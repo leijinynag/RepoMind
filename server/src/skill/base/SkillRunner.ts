@@ -91,7 +91,7 @@ export class SkillRunner {
                 },
                 systemPrompt,
                 userPrompt,
-                maxSteps: 20, // Skill 的步数限制比聊天少
+                maxSteps: 50, // 增加步数限制
               }),
             );
 

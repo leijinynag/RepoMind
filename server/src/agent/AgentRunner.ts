@@ -68,6 +68,10 @@ async function loadProjectContext(
         totalFiles: memory.stats?.totalFiles,
         totalLines: memory.stats?.totalLines,
         architectureSummary: memory.architectureSummary,
+        // 新增：结构化架构信息
+        useCases: memory.architecture?.useCases,
+        targetUsers: memory.architecture?.targetUsers,
+        quickStart: memory.architecture?.quickStart || memory.devGuide?.startup,
       };
     }
   } catch (error) {

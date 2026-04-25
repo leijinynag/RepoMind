@@ -4,11 +4,19 @@ import { ToolDefinition } from "../tools/BaseTool";
 export interface ProjectContext {
   name?: string;
   description?: string;
-  techStack?: string[];
+  techStack?: {
+    frontend?: string[];
+    backend?: string[];
+    database?: string[];
+    devTools?: string[];
+  };
   type?: string;
   totalFiles?: number;
   totalLines?: number;
   architectureSummary?: string;
+  useCases?: string[];
+  targetUsers?: string[];
+  quickStart?: string;
 }
 
 export function buildSystemPrompt(
@@ -25,15 +33,35 @@ export function buildSystemPrompt(
   // 构建项目背景信息
   let projectInfo = "";
   if (projectContext) {
+    // 格式化技术栈
+    let techStackStr = "未知";
+    if (projectContext.techStack) {
+      const ts = projectContext.techStack;
+      const parts: string[] = [];
+      if (ts.frontend?.length) parts.push(`前端: ${ts.frontend.join(", ")}`);
+      if (ts.backend?.length) parts.push(`后端: ${ts.backend.join(", ")}`);
+      if (ts.database?.length) parts.push(`数据库: ${ts.database.join(", ")}`);
+      if (ts.devTools?.length) parts.push(`工具: ${ts.devTools.join(", ")}`);
+      techStackStr = parts.length > 0 ? parts.join(" | ") : "未知";
+    }
+
     projectInfo = `
 ## 项目背景信息
 - 项目名称: ${projectContext.name || "未知"}
 - 项目描述: ${projectContext.description || "无"}
-- 技术栈: ${projectContext.techStack?.join(", ") || "未知"}
+- 技术栈: ${techStackStr}
 - 项目类型: ${projectContext.type || "未知"}
 - 文件数量: ${projectContext.totalFiles || "未知"}
 - 代码行数: ${projectContext.totalLines || "未知"}
-${projectContext.architectureSummary ? `- 架构概述: ${projectContext.architectureSummary}` : ""}
+${projectContext.architectureSummary ? `
+### 架构概述
+${projectContext.architectureSummary}` : ""}
+${projectContext.useCases?.length ? `
+### 使用场景
+${projectContext.useCases.map((u, i) => `${i + 1}. ${u}`).join("\n")}` : ""}
+${projectContext.quickStart ? `
+### 快速上手
+${projectContext.quickStart}` : ""}
 `;
   }
 

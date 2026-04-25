@@ -1,69 +1,82 @@
-import { CodebaseAnalysisService } from "../../analysis/CodebaseAnalysisService";
 import { BaseSkill } from "../base/BaseSkill";
 import { SkillContext } from "../base/SkillContext";
-import { SkillInput, SkillProgressEvent } from "../base/types";
+import { SkillInput } from "../base/types";
 import { SkillMetadata } from "../planner/SkillMetadata";
 
-interface DependencyInfo {
-  name: string;
-  version: string;
-  type: "production" | "development";
-  isCore: boolean;
-}
-
-interface DependenciesAnalysisOutput {
-  dependencies: DependencyInfo[];
-  coreFrameworks: string[];
-  warnings: string[];
-  summary: string;
-  evidence: Array<{ path: string; reason: string }>;
-  confidence: "high" | "medium" | "low";
-}
-
+// 依赖分析 Skill：由 LLM 生成实用的依赖分析报告
 export class DependenciesAnalysisSkill extends BaseSkill {
   definition = {
     id: "dependencies_analysis",
     name: "依赖分析",
-    description: "分析项目依赖，识别核心框架和潜在问题。",
+    description: "分析项目依赖，帮助用户了解使用了哪些核心框架和库。",
     dependsOn: ["project_overview"],
     outputSchema: {
       type: "object",
       properties: {
-        dependencies: {
+        summary: { type: "string", description: "依赖总体概述（如：项目使用 React 18 + TypeScript + Vite 技术栈）" },
+        coreFrameworks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string", description: "框架名称" },
+              version: { type: "string", description: "版本号" },
+              purpose: { type: "string", description: "在项目中的作用" },
+            },
+          },
+          description: "核心框架（最重要的3-5个）",
+        },
+        productionDeps: {
           type: "array",
           items: {
             type: "object",
             properties: {
               name: { type: "string" },
               version: { type: "string" },
-              type: { type: "string", enum: ["production", "development"] },
-              isCore: { type: "boolean" },
+              purpose: { type: "string" },
             },
           },
+          description: "生产依赖（重要依赖）",
         },
-        coreFrameworks: { type: "array", items: { type: "string" } },
-        warnings: { type: "array", items: { type: "string" } },
-        summary: { type: "string" },
-        evidence: { type: "array", items: { type: "object", properties: { path: { type: "string" }, reason: { type: "string" } } } },
-        confidence: { type: "string", enum: ["high", "medium", "low"] },
+        devDeps: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              version: { type: "string" },
+              purpose: { type: "string" },
+            },
+          },
+          description: "开发依赖（重要依赖）",
+        },
+        outdatedPackages: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              name: { type: "string" },
+              current: { type: "string" },
+              suggested: { type: "string" },
+              reason: { type: "string" },
+            },
+          },
+          description: "可能过时的依赖",
+        },
+        securityConcerns: {
+          type: "array",
+          items: { type: "string" },
+          description: "安全相关建议",
+        },
+        recommendations: {
+          type: "array",
+          items: { type: "string" },
+          description: "优化建议",
+        },
       },
-      required: ["dependencies", "coreFrameworks", "warnings", "summary", "evidence", "confidence"],
+      required: ["summary", "coreFrameworks"],
     },
   };
-
-  private analysisService = new CodebaseAnalysisService();
-
-  // 已知的核心框架关键词
-  private coreFrameworkKeywords = [
-    "react", "vue", "angular", "svelte", "next", "nuxt", "remix",
-    "express", "fastify", "koa", "nestjs", "hapi",
-    "typescript", "webpack", "vite", "rollup", "esbuild",
-    "prisma", "mongoose", "sequelize", "typeorm",
-    "jest", "vitest", "mocha", "cypress", "playwright",
-    "tailwindcss", "styled-components", "emotion",
-    "redux", "mobx", "zustand", "recoil",
-    "graphql", "apollo", "trpc",
-  ];
 
   getMetadata(): SkillMetadata {
     return {
@@ -71,192 +84,149 @@ export class DependenciesAnalysisSkill extends BaseSkill {
       name: this.definition.name,
       description: this.definition.description,
       useCases: [
-        "分析项目依赖结构",
-        "识别核心框架",
-        "发现依赖问题",
+        "了解项目使用的核心技术栈",
+        "查看依赖版本信息",
+        "获取依赖升级建议",
       ],
       dependsOn: this.definition.dependsOn,
-      outputFields: ["dependencies", "coreFrameworks", "warnings", "summary"],
-      tags: ["dependencies", "npm", "analysis"],
+      outputFields: ["summary", "coreFrameworks", "productionDeps", "devDeps", "outdatedPackages", "recommendations"],
+      tags: ["dependencies", "npm", "packages"],
       cost: "low",
-      suitableFor: ["overview", "architecture"],
-      outputKinds: ["dependencies", "warnings"],
-      useWhen: "需要了解项目依赖和框架时",
+      suitableFor: ["overview"],
+      outputKinds: ["dependencies", "frameworks"],
+      useWhen: "需要了解项目依赖情况时",
       avoidWhen: "项目没有 package.json 时",
     };
   }
 
   getSystemPrompt(): string {
-    return `你是依赖分析专家，请输出结构化 JSON。
-分析依赖时重点识别：
-1. 核心框架（React、Vue、Express 等）
-2. 开发工具链（TypeScript、Webpack、Vite 等）
-3. 潜在问题（版本过旧、安全风险）`;
+    return `你是一位依赖分析专家，熟悉 Node.js、Python、Go 等生态系统的包管理。
+
+你的任务是输出一份**对开发者有价值**的依赖分析报告。请从开发者角度思考：
+
+## 核心问题
+
+1. **用了哪些核心框架？** React、Vue、Express 等
+2. **依赖是用来做什么的？** 每个重要依赖的作用
+3. **有没有过时的依赖？** 建议升级的版本
+4. **有没有安全问题？** 已知漏洞或风险
+
+## 输出原则
+
+1. **突出重点**：只列出最重要的核心框架和依赖
+2. **说明用途**：告诉开发者每个依赖是做什么的
+3. **给建议**：对于过时或有风险的依赖给出建议
+
+## 不要输出
+
+- 置信度评分
+- 证据来源列表
+- 所有依赖的完整列表（只列出重要的）`;
   }
 
-  getUserPrompt(_input: SkillInput, _context: SkillContext): string {
-    return "请分析项目依赖。";
-  }
-
-  getAllowedTools(): string[] {
-    return [];
-  }
-
-  async runDirect(
-    _input: SkillInput,
-    context: SkillContext,
-    onProgress?: (event: SkillProgressEvent) => void,
-  ): Promise<DependenciesAnalysisOutput> {
-    onProgress?.({ type: "thinking", content: "分析项目依赖" });
-
+  getUserPrompt(input: SkillInput, context: SkillContext): string {
     const overview = context.getData<any>("project_overview");
-    if (!overview) {
-      throw new Error("缺少 project_overview 输出");
-    }
-
-    const packageJson = overview.packageJson || {};
+    const packageJson = overview?.packageJson || {};
     const dependencies = packageJson.dependencies || {};
     const devDependencies = packageJson.devDependencies || {};
 
-    const allDeps: DependencyInfo[] = [];
-    const coreFrameworks: string[] = [];
-    const warnings: string[] = [];
+    return `请分析以下项目的依赖：
 
-    // 处理生产依赖
-    for (const [name, version] of Object.entries(dependencies)) {
-      const isCore = this.isCoreFramework(name);
-      allDeps.push({
-        name,
-        version: version as string,
-        type: "production",
-        isCore,
-      });
-      if (isCore) {
-        coreFrameworks.push(name);
-      }
-    }
+## 项目信息
+- 项目名称：${packageJson.name || "未知"}
+- 项目描述：${packageJson.description || "无"}
 
-    // 处理开发依赖
-    for (const [name, version] of Object.entries(devDependencies)) {
-      const isCore = this.isCoreFramework(name);
-      allDeps.push({
-        name,
-        version: version as string,
-        type: "development",
-        isCore,
-      });
-      if (isCore && !coreFrameworks.includes(name)) {
-        coreFrameworks.push(name);
-      }
-    }
+## 生产依赖 (${Object.keys(dependencies).length} 个)
+${Object.entries(dependencies).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "无"}
 
-    // 检查潜在问题
-    if (Object.keys(dependencies).length > 50) {
-      warnings.push(`生产依赖数量较多 (${Object.keys(dependencies).length})，建议检查是否需要精简`);
-    }
+## 开发依赖 (${Object.keys(devDependencies).length} 个)
+${Object.entries(devDependencies).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "无"}
 
-    // 检查常见的缺失依赖
-    const hasTestFramework = Object.keys(devDependencies).some(d =>
-      ["jest", "vitest", "mocha", "cypress", "playwright"].includes(d)
-    );
-    if (!hasTestFramework && allDeps.length > 5) {
-      warnings.push("未检测到测试框架，建议添加单元测试");
-    }
+## 输出要求
 
-    const hasTypeScript = Object.keys(devDependencies).includes("typescript");
-    const hasReact = Object.keys(dependencies).includes("react");
-    if (hasReact && !hasTypeScript) {
-      warnings.push("React 项目未使用 TypeScript，建议迁移以获得更好的类型支持");
-    }
+请分析这些依赖，输出：
 
-    // 构建证据
-    const evidence: Array<{ path: string; reason: string }> = [
-      { path: "package.json", reason: "提供依赖信息" },
-    ];
+1. **summary**: 依赖总体概述
+2. **coreFrameworks**: 核心框架（最重要的3-5个）
+3. **productionDeps**: 重要生产依赖（最多10个）
+4. **devDeps**: 重要开发依赖（最多10个）
+5. **outdatedPackages**: 可能过时的依赖（如有）
+6. **securityConcerns**: 安全相关建议（如有）
+7. **recommendations**: 优化建议（如有）
 
-    // 判断置信度
-    let confidence: "high" | "medium" | "low" = "high";
-    if (Object.keys(dependencies).length === 0 && Object.keys(devDependencies).length === 0) {
-      confidence = "low";
-    } else if (coreFrameworks.length === 0) {
-      confidence = "medium";
-    }
-
-    const summary = `共 ${allDeps.length} 个依赖，其中 ${coreFrameworks.length} 个核心框架。${warnings.length > 0 ? `发现 ${warnings.length} 个潜在问题。` : ""}`;
-
-    return {
-      dependencies: allDeps,
-      coreFrameworks,
-      warnings,
-      summary,
-      evidence,
-      confidence,
-    };
+直接输出 JSON 结果。`;
   }
 
-  private isCoreFramework(name: string): boolean {
-    const lowerName = name.toLowerCase();
-    return this.coreFrameworkKeywords.some(keyword =>
-      lowerName === keyword || lowerName.startsWith(`@${keyword}/`)
-    );
+  getAllowedTools(): string[] {
+    return ["read_file", "search_code"];
   }
 
   formatMarkdown(data: Record<string, any>): string {
-    const deps = (data.dependencies || [])
-      .filter((d: DependencyInfo) => d.type === "production")
-      .map((d: DependencyInfo) => `| ${d.name} | ${d.version} | ${d.isCore ? "⭐" : ""} |`)
-      .join("\n");
-
-    const devDeps = (data.dependencies || [])
-      .filter((d: DependencyInfo) => d.type === "development")
-      .map((d: DependencyInfo) => `| ${d.name} | ${d.version} | ${d.isCore ? "⭐" : ""} |`)
-      .join("\n");
-
-    const coreFrameworks = (data.coreFrameworks || [])
-      .map((f: string) => `- ${f}`)
-      .join("\n");
-
-    const warnings = (data.warnings || [])
-      .map((w: string) => `- ⚠️ ${w}`)
-      .join("\n");
-
-    const confidence = data.confidence || "medium";
-    const confidenceEmoji = confidence === "high" ? "✅" : confidence === "medium" ? "⚠️" : "❓";
+    const coreFrameworks = Array.isArray(data.coreFrameworks) ? data.coreFrameworks : [];
+    const productionDeps = Array.isArray(data.productionDeps) ? data.productionDeps : [];
+    const devDeps = Array.isArray(data.devDeps) ? data.devDeps : [];
+    const outdatedPackages = Array.isArray(data.outdatedPackages) ? data.outdatedPackages : [];
+    const securityConcerns = Array.isArray(data.securityConcerns) ? data.securityConcerns : [];
+    const recommendations = Array.isArray(data.recommendations) ? data.recommendations : [];
 
     let md = `## 依赖分析
 
-${data.summary}
-
-- 置信度：${confidenceEmoji} ${confidence}
-
-### 核心框架
-${coreFrameworks || "- 无"}
+### 概述
+${data.summary || "暂无"}
 
 `;
 
-    if (deps) {
-      md += `### 生产依赖
+    if (coreFrameworks.length > 0) {
+      md += `### 核心框架
 
-| 依赖名称 | 版本 | 核心框架 |
-|---------|------|---------|
-${deps}
+| 框架 | 版本 | 用途 |
+|------|------|------|
+${coreFrameworks.map((f: any) => `| ${f.name || "-"} | ${f.version || "-"} | ${f.purpose || "-"} |`).join("\n")}
+
 `;
     }
 
-    if (devDeps) {
-      md += `
-### 开发依赖
+    if (productionDeps.length > 0) {
+      md += `### 重要生产依赖
 
-| 依赖名称 | 版本 | 核心框架 |
-|---------|------|---------|
-${devDeps}
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+${productionDeps.slice(0, 12).map((d: any) => `| ${d.name || "-"} | ${d.version || "-"} | ${d.purpose || "-"} |`).join("\n")}${productionDeps.length > 12 ? `\n| ... | ... | *(还有 ${productionDeps.length - 12} 个)* |` : ""}
+
 `;
     }
 
-    if (warnings) {
-      md += `
-### 潜在问题
-${warnings}
+    if (devDeps.length > 0) {
+      md += `### 重要开发依赖
+
+| 依赖 | 版本 | 用途 |
+|------|------|------|
+${devDeps.slice(0, 10).map((d: any) => `| ${d.name || "-"} | ${d.version || "-"} | ${d.purpose || "-"} |`).join("\n")}${devDeps.length > 10 ? `\n| ... | ... | *(还有 ${devDeps.length - 10} 个)* |` : ""}
+
+`;
+    }
+
+    if (outdatedPackages.length > 0) {
+      md += `### 可能过时的依赖
+
+| 依赖 | 当前版本 | 建议版本 | 原因 |
+|------|----------|----------|------|
+${outdatedPackages.map((p: any) => `| ${p.name || "-"} | ${p.current || "-"} | ${p.suggested || "-"} | ${p.reason || "-"} |`).join("\n")}
+
+`;
+    }
+
+    if (securityConcerns.length > 0) {
+      md += `### 安全建议
+${securityConcerns.map((s: string) => `- ⚠️ ${s}`).join("\n")}
+
+`;
+    }
+
+    if (recommendations.length > 0) {
+      md += `### 优化建议
+${recommendations.map((r: string) => `- 💡 ${r}`).join("\n")}
+
 `;
     }
 

@@ -25,7 +25,7 @@ interface KeyFileInfo {
   summary: string;
 }
 
-// 顶层区域摘要，用于回答“这个仓库大致分成哪几块”。
+// 顶层区域摘要，用于回答"这个仓库大致分成哪几块"。
 export interface StructureArea {
   name: string;
   path: string;
@@ -74,7 +74,7 @@ export interface ApiSurfaceSummaryResult {
   summary: string;
 }
 
-// 前端 trace 记录“谁在什么上下文里发起了哪个请求”。
+// 前端 trace 记录"谁在什么上下文里发起了哪个请求"。
 export interface FrontendApiTraceResult {
   sourceFile: string;
   trigger: string;
@@ -178,7 +178,7 @@ export class CodebaseAnalysisService {
     };
   }
 
-  // 抽取 dependencies 作为“外部依赖”快照，暂不补充额外语义描述。
+  // 抽取 dependencies 作为"外部依赖"快照，暂不补充额外语义描述。
   extractExternalDependencies(packageJson: any): ExternalDependency[] {
     return Object.entries(packageJson.dependencies || {}).map(([name, version]) => ({
       name,
@@ -291,7 +291,7 @@ export class CodebaseAnalysisService {
       .sort((a, b) => a.localeCompare(b));
   }
 
-  // 结构摘要只回答“有哪些区域、入口和边界”，不尝试产出完整架构图。
+  // 结构摘要只回答"有哪些区域、入口和边界"，不尝试产出完整架构图。
   async detectProjectStructure(repoPath: string): Promise<StructureSummaryResult> {
     const topLevelEntries = await this.listTopLevelEntries(repoPath);
     const areas: StructureArea[] = topLevelEntries.map((entry) => ({
@@ -331,7 +331,7 @@ export class CodebaseAnalysisService {
     };
   }
 
-  // API surface 只做“前端如何发请求 / 后端路由在哪里”的静态面扫描。
+  // API surface 只做"前端如何发请求 / 后端路由在哪里"的静态面扫描。
   async extractApiSurface(repoPath: string): Promise<ApiSurfaceSummaryResult> {
     const [backendRoutes, frontendClients] = await Promise.all([
       this.extractBackendRoutes(repoPath),
@@ -533,7 +533,7 @@ export class CodebaseAnalysisService {
     return candidates.slice(0, 8);
   }
 
-  // 入口点识别用于告诉上层“优先读哪里”，所以采用固定候选表而非泛化搜索。
+  // 入口点识别用于告诉上层"优先读哪里"，所以采用固定候选表而非泛化搜索。
   async findEntrypoints(repoPath: string): Promise<EntrypointInfo[]> {
     const candidates = [
       ["frontend/src/main.tsx", "frontend_entry", "前端应用挂载入口"],
@@ -562,12 +562,14 @@ export class CodebaseAnalysisService {
     return entrypoints;
   }
 
-  // 路由抽取只覆盖常见 Express 风格写法，先解决“能定位大部分显式路由”。
+  // 路由抽取只覆盖常见 Express 风格写法，先解决"能定位大部分显式路由"。
   async extractBackendRoutes(repoPath: string): Promise<BackendRouteInfo[]> {
     const repoFiles = await this.listRepoFiles(repoPath, ["server", "src", "api", "backend"]);
     const routeFiles = repoFiles.filter((relativePath) =>
       /(routes?|api)\/.+\.(ts|tsx|js|jsx)$/.test(relativePath) ||
-      /routes?\.(ts|tsx|js|jsx)$/.test(relativePath),
+      /routes?\.(ts|tsx|js|jsx)$/.test(relativePath) ||
+      /\.routes\.(ts|tsx|js|jsx)$/.test(relativePath) ||
+      /api\.(ts|tsx|js|jsx)$/.test(relativePath),
     );
     const mounts = await this.extractRouterMounts(repoPath);
     const routes: BackendRouteInfo[] = [];
@@ -594,7 +596,7 @@ export class CodebaseAnalysisService {
     return this.dedupeByKey(routes, (route) => `${route.method}|${route.path}|${route.file}`).slice(0, 60);
   }
 
-  // API client 抽取并不要求“封装层”概念严格成立，只要文件内出现请求能力即可入选。
+  // API client 抽取并不要求"封装层"概念严格成立，只要文件内出现请求能力即可入选。
   async extractFrontendApiClients(repoPath: string): Promise<FrontendClientInfo[]> {
     const frontendFiles = await this.listRepoFiles(repoPath, ["frontend", "client", "web", "src"]);
     const clients: FrontendClientInfo[] = [];
@@ -663,7 +665,7 @@ export class CodebaseAnalysisService {
     return entry.endsWith("/") ? "目录区域" : "根级文件";
   }
 
-  // 文件扫描统一从这里走，顺带做目录降噪和“优先根目录”选择。
+  // 文件扫描统一从这里走，顺带做目录降噪和"优先根目录"选择。
   private async listRepoFiles(repoPath: string, preferredRoots: string[] = []): Promise<string[]> {
     const entries = await fs.readdir(repoPath, {
       recursive: true,
@@ -784,7 +786,7 @@ export class CodebaseAnalysisService {
     return null;
   }
 
-  // 导出符号只用于提示“这个文件像不像 client / handler 模块”，不做完整语义分析。
+  // 导出符号只用于提示"这个文件像不像 client / handler 模块"，不做完整语义分析。
   private extractExportedSymbols(content: string): string[] {
     const symbols = new Set<string>();
     for (const match of content.matchAll(/export\s+(?:async\s+)?function\s+([A-Za-z0-9_]+)/g)) {
@@ -799,7 +801,7 @@ export class CodebaseAnalysisService {
     return Array.from(symbols);
   }
 
-  // 在调用点附近回溯最近的函数名，用来给 trace 提供“触发上下文”。
+  // 在调用点附近回溯最近的函数名，用来给 trace 提供"触发上下文"。
   private findNearestFunctionName(content: string, index: number): string {
     const prefix = content.slice(0, index);
     const functionMatches = Array.from(prefix.matchAll(/function\s+([A-Za-z0-9_]+)|const\s+([A-Za-z0-9_]+)\s*=|async\s+function\s+([A-Za-z0-9_]+)/g));
@@ -862,7 +864,7 @@ export class CodebaseAnalysisService {
     return results;
   }
 
-  // 文本读取失败时统一返回 null，让上层按“缺少证据”处理，而不是中断整个流程。
+  // 文本读取失败时统一返回 null，让上层按"缺少证据"处理，而不是中断整个流程。
   private async readTextFile(filePath: string): Promise<string | null> {
     try {
       return await fs.readFile(filePath, "utf-8");

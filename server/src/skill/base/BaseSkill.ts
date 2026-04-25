@@ -26,15 +26,28 @@ export abstract class BaseSkill {
   ): Promise<Record<string, any> | null> {
     return null;
   }
-  // 解析 LLM 输出，提取结构化数据（默认直接 JSON.parse）
+  // 解析 LLM 输出，提取结构化数据
   parseOutput(llmOutput: string): Record<string, any> {
     try {
-      // 尝试提取 JSON 块
+      // 1. 尝试提取 ```json 代码块
       const jsonMatch = llmOutput.match(/```json\s*([\s\S]*?)\s*```/);
       if (jsonMatch) {
         return JSON.parse(jsonMatch[1]);
       }
-      // 尝试直接解析
+
+      // 2. 尝试找到 JSON 对象（以 { 开始，以 } 结束）
+      const jsonStart = llmOutput.indexOf('{');
+      const jsonEnd = llmOutput.lastIndexOf('}');
+      if (jsonStart !== -1 && jsonEnd !== -1 && jsonEnd > jsonStart) {
+        const jsonStr = llmOutput.slice(jsonStart, jsonEnd + 1);
+        try {
+          return JSON.parse(jsonStr);
+        } catch {
+          // 继续尝试其他方法
+        }
+      }
+
+      // 3. 尝试直接解析
       return JSON.parse(llmOutput);
     } catch {
       // 解析失败，返回原始内容

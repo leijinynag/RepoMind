@@ -1,76 +1,88 @@
-import { CodebaseAnalysisService } from "../../analysis/CodebaseAnalysisService";
 import { BaseSkill } from "../base/BaseSkill";
 import { SkillContext } from "../base/SkillContext";
-import { SkillInput, SkillProgressEvent } from "../base/types";
+import { SkillInput } from "../base/types";
 import { SkillMetadata } from "../planner/SkillMetadata";
 
-// 开发指南输出接口
-interface DevGuideOutput {
-  startup: string;
-  scripts: Array<{ name: string; command: string; description: string }>;
-  envHints: string[];
-  keyPaths: string[];
-  pitfalls: string[];
-  evidence: Array<{ path: string; reason: string }>;
-  confidence: "high" | "medium" | "low";
-}
-
-// 开发指南 Skill：帮助用户快速了解如何启动和开发项目
+// 开发指南 Skill：由 LLM 生成实用的开发指南
 export class DevGuideSkill extends BaseSkill {
   definition = {
     id: "dev_guide",
     name: "开发指南",
-    description: "提供项目启动方式、常用脚本、环境变量线索和开发注意事项。",
+    description: "生成实用的项目开发指南，帮助开发者快速上手。",
     dependsOn: ["project_overview", "structure_summary"],
     outputSchema: {
       type: "object",
       properties: {
-        startup: { type: "string", description: "项目启动方式说明" },
-        scripts: {
+        prerequisites: {
+          type: "array",
+          items: { type: "string" },
+          description: "前置条件（Node版本、系统要求等）",
+        },
+        quickStart: {
+          type: "object",
+          properties: {
+            install: { type: "string", description: "安装命令" },
+            dev: { type: "string", description: "开发启动命令" },
+            build: { type: "string", description: "构建命令" },
+            test: { type: "string", description: "测试命令" },
+          },
+          description: "快速开始命令",
+        },
+        envVariables: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              name: { type: "string", description: "脚本名称" },
-              command: { type: "string", description: "执行命令" },
-              description: { type: "string", description: "脚本说明" },
+              name: { type: "string", description: "变量名" },
+              description: { type: "string", description: "变量说明" },
+              required: { type: "boolean", description: "是否必需" },
+              default: { type: "string", description: "默认值" },
             },
           },
-          description: "常用开发脚本",
+          description: "环境变量配置",
         },
-        envHints: {
-          type: "array",
-          items: { type: "string" },
-          description: "环境变量线索",
-        },
-        keyPaths: {
-          type: "array",
-          items: { type: "string" },
-          description: "开发时的关键路径",
-        },
-        pitfalls: {
-          type: "array",
-          items: { type: "string" },
-          description: "容易踩坑的地方",
-        },
-        evidence: {
+        keyDirectories: {
           type: "array",
           items: {
             type: "object",
             properties: {
-              path: { type: "string", description: "证据文件路径" },
-              reason: { type: "string", description: "该文件支持结论的原因" },
+              path: { type: "string", description: "目录路径" },
+              purpose: { type: "string", description: "目录用途" },
             },
           },
-          description: "支持结论的证据文件",
+          description: "关键目录说明",
         },
-        confidence: { type: "string", enum: ["high", "medium", "low"], description: "结论置信度" },
+        commonTasks: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              task: { type: "string", description: "任务名称" },
+              howTo: { type: "string", description: "如何完成" },
+            },
+          },
+          description: "常见开发任务",
+        },
+        troubleshooting: {
+          type: "array",
+          items: {
+            type: "object",
+            properties: {
+              problem: { type: "string", description: "问题描述" },
+              solution: { type: "string", description: "解决方案" },
+            },
+          },
+          description: "常见问题及解决方案",
+        },
+        tips: {
+          type: "array",
+          items: { type: "string" },
+          description: "开发提示和注意事项",
+        },
       },
-      required: ["startup", "scripts", "envHints", "keyPaths", "pitfalls", "evidence", "confidence"],
+      required: ["quickStart"],
     },
   };
-
-  private analysisService = new CodebaseAnalysisService();
 
   getMetadata(): SkillMetadata {
     return {
@@ -79,252 +91,170 @@ export class DevGuideSkill extends BaseSkill {
       description: this.definition.description,
       useCases: [
         "快速了解如何启动项目",
-        "获取开发环境配置线索",
-        "了解常用开发脚本",
-        "避免常见开发陷阱",
+        "配置开发环境",
+        "解决常见开发问题",
       ],
       dependsOn: this.definition.dependsOn,
-      outputFields: ["startup", "scripts", "envHints", "keyPaths", "pitfalls", "evidence", "confidence"],
-      tags: ["development", "guide", "startup", "scripts"],
-      cost: "low",
+      outputFields: ["quickStart", "envVariables", "keyDirectories", "commonTasks", "troubleshooting", "tips"],
+      tags: ["development", "guide", "setup"],
+      cost: "medium",
+      suitableFor: ["overview", "development"],
+      outputKinds: ["guide", "setup", "scripts"],
+      useWhen: "需要了解如何开发此项目时",
+      avoidWhen: "只需要了解项目结构时",
     };
   }
 
   getSystemPrompt(): string {
-    return `你是开发指南助手，请输出结构化 JSON。
-你的分析结论必须有文件证据支持。
-重点关注：如何启动项目、常用脚本、环境变量、关键路径、容易踩坑的地方。`;
+    return `你是一位经验丰富的开发者，擅长编写清晰、实用的开发文档。
+
+你的任务是生成一份**对开发者有价值**的开发指南。请从开发者角度思考：
+
+## 核心问题
+
+1. **如何开始？** 安装依赖、启动项目的命令
+2. **需要什么环境？** Node版本、环境变量、系统依赖
+3. **项目结构是什么样的？** 关键目录的作用
+4. **常见任务怎么做？** 添加新功能、修改配置等
+5. **遇到问题怎么办？** 常见错误及解决方案
+
+## 输出原则
+
+1. **实用优先**：给出可以直接复制执行的命令
+2. **真实可靠**：基于项目实际文件和配置，不要编造
+3. **简洁明了**：不要输出对开发者无意义的信息
+
+## 不要输出
+
+- 置信度评分
+- 证据来源列表
+- 过于通用的建议（如"遵循最佳实践"）
+- 与开发无关的信息`;
   }
 
-  getUserPrompt(_input: SkillInput, _context: SkillContext): string {
-    return "请生成开发指南。";
+  getUserPrompt(input: SkillInput, context: SkillContext): string {
+    const overview = context.getData<any>("project_overview");
+    const structure = context.getData<any>("structure_summary");
+
+    const packageJson = overview?.packageJson || {};
+    const scripts = packageJson.scripts || {};
+    const topLevelEntries = overview?.topLevelEntries || [];
+    const entrypoints = structure?.entrypoints || [];
+
+    return `请为以下项目生成开发指南：
+
+## 项目基础信息
+- 项目名称：${packageJson.name || "未知"}
+- 项目描述：${packageJson.description || "无"}
+
+## 可用脚本
+${Object.entries(scripts).map(([k, v]) => `- ${k}: ${v}`).join("\n") || "无"}
+
+## 目录结构
+${topLevelEntries.slice(0, 15).join("\n")}
+
+## 入口文件
+${entrypoints.map((e: any) => `- ${e.path}: ${e.reason || ""}`).join("\n") || "未知"}
+
+## 输出要求
+
+请读取关键文件（README.md、.env.example、配置文件等），生成实用的开发指南：
+
+1. **prerequisites**: 前置条件（Node版本、系统要求等）
+2. **quickStart**: 核心命令（install、dev、build、test）
+3. **envVariables**: 环境变量配置（名称、说明、是否必需、默认值）
+4. **keyDirectories**: 关键目录说明
+5. **commonTasks**: 常见开发任务（如：添加新API、修改数据库等）
+6. **troubleshooting**: 常见问题及解决方案
+7. **tips**: 开发提示和注意事项
+
+如果需要更多信息，可以调用工具读取文件，但最多调用 3 次。`;
   }
 
   getAllowedTools(): string[] {
-    return [];
-  }
-
-  async runDirect(
-    input: SkillInput,
-    context: SkillContext,
-    onProgress?: (event: SkillProgressEvent) => void,
-  ): Promise<DevGuideOutput> {
-    onProgress?.({ type: "thinking", content: "生成开发指南" });
-
-    const overview = context.getData<any>("project_overview");
-    const structureSummary = context.getData<any>("structure_summary");
-
-    // 从 package.json 提取脚本信息
-    const packageJson = overview?.packageJson || {};
-    const scripts = this.extractScripts(packageJson);
-
-    // 从结构摘要提取关键路径
-    const keyPaths = this.extractKeyPaths(structureSummary);
-
-    // 分析环境变量线索
-    const envHints = await this.findEnvHints(input.repoPath);
-
-    // 生成启动说明
-    const startup = this.generateStartupDescription(packageJson, scripts);
-
-    // 识别常见陷阱
-    const pitfalls = this.identifyPitfalls(packageJson, structureSummary);
-
-    // 构建证据列表
-    const evidence: Array<{ path: string; reason: string }> = [];
-    if (packageJson.name) {
-      evidence.push({ path: "package.json", reason: "提供项目脚本和依赖信息" });
-    }
-    if (keyPaths.length > 0) {
-      evidence.push({ path: keyPaths[0], reason: "关键入口文件" });
-    }
-
-    // 判断置信度
-    let confidence: "high" | "medium" | "low" = "medium";
-    if (scripts.length > 0 && packageJson.name) {
-      confidence = "high";
-    } else if (!packageJson.name) {
-      confidence = "low";
-    }
-
-    return {
-      startup,
-      scripts,
-      envHints,
-      keyPaths,
-      pitfalls,
-      evidence,
-      confidence,
-    };
-  }
-
-  private extractScripts(packageJson: any): Array<{ name: string; command: string; description: string }> {
-    const scripts: Array<{ name: string; command: string; description: string }> = [];
-    const packageScripts = packageJson.scripts || {};
-
-    const descriptions: Record<string, string> = {
-      dev: "开发模式启动",
-      start: "生产模式启动",
-      build: "构建项目",
-      test: "运行测试",
-      lint: "代码检查",
-      format: "代码格式化",
-      clean: "清理构建产物",
-      "dev:server": "启动后端开发服务",
-      "dev:frontend": "启动前端开发服务",
-    };
-
-    for (const [name, command] of Object.entries(packageScripts)) {
-      scripts.push({
-        name,
-        command: command as string,
-        description: descriptions[name] || `${name} 脚本`,
-      });
-    }
-
-    return scripts.slice(0, 10);
-  }
-
-  private extractKeyPaths(structureSummary: any): string[] {
-    if (!structureSummary?.entrypoints) {
-      return [];
-    }
-    return structureSummary.entrypoints
-      .slice(0, 5)
-      .map((entry: any) => entry.path);
-  }
-
-  private async findEnvHints(repoPath: string): Promise<string[]> {
-    const hints: string[] = [];
-
-    // 检查常见环境变量文件
-    const envFiles = [".env.example", ".env.sample", ".env.template", ".env.local.example"];
-    for (const file of envFiles) {
-      try {
-        const content = await this.analysisService["readTextFile"](`${repoPath}/${file}`);
-        if (content) {
-          const lines = content.split("\n").filter((line: string) => line.trim() && !line.startsWith("#"));
-          hints.push(...lines.slice(0, 5).map((line: string) => line.split("=")[0]));
-        }
-      } catch {
-        // 忽略读取错误
-      }
-    }
-
-    // 添加常见环境变量提示
-    if (hints.length === 0) {
-      hints.push("DATABASE_URL - 数据库连接字符串");
-      hints.push("API_KEY - API 密钥");
-      hints.push("PORT - 服务端口");
-    }
-
-    return hints.slice(0, 10);
-  }
-
-  private generateStartupDescription(
-    packageJson: any,
-    scripts: Array<{ name: string; command: string; description: string }>,
-  ): string {
-    const parts: string[] = [];
-
-    if (packageJson.name) {
-      parts.push(`${packageJson.name} 项目`);
-    }
-
-    const devScript = scripts.find((s) => s.name === "dev");
-    const startScript = scripts.find((s) => s.name === "start");
-
-    if (devScript) {
-      parts.push(`运行 \`npm run dev\` 启动开发模式`);
-    } else if (startScript) {
-      parts.push(`运行 \`npm start\` 启动项目`);
-    }
-
-    const buildScript = scripts.find((s) => s.name === "build");
-    if (buildScript) {
-      parts.push(`运行 \`npm run build\` 构建生产版本`);
-    }
-
-    if (parts.length === 0) {
-      parts.push("请参考 README.md 获取启动说明");
-    }
-
-    return parts.join("。");
-  }
-
-  private identifyPitfalls(packageJson: any, structureSummary: any): string[] {
-    const pitfalls: string[] = [];
-
-    // 检查常见问题
-    const deps = Object.keys(packageJson.dependencies || {});
-
-    if (deps.includes("typescript")) {
-      pitfalls.push("使用 TypeScript，注意类型定义和编译配置");
-    }
-
-    if (deps.includes("eslint") || deps.includes("@typescript-eslint/parser")) {
-      pitfalls.push("配置了 ESLint，提交前请确保代码检查通过");
-    }
-
-    if (structureSummary?.boundaries?.some((b: any) => b.name === "frontend")) {
-      pitfalls.push("项目包含前端部分，注意前后端联调");
-    }
-
-    if (structureSummary?.boundaries?.some((b: any) => b.name === "backend")) {
-      pitfalls.push("项目包含后端部分，注意数据库连接和环境变量配置");
-    }
-
-    if (pitfalls.length === 0) {
-      pitfalls.push("请参考 README.md 和项目文档了解注意事项");
-    }
-
-    return pitfalls.slice(0, 5);
+    return ["list_files", "read_file", "search_code"];
   }
 
   formatMarkdown(data: Record<string, any>): string {
-    const scripts = (data.scripts || [])
-      .map((s: any) => `- \`npm run ${s.name}\`：${s.description}（${s.command}）`)
-      .join("\n");
+    const quickStart = data.quickStart || {};
+    const prerequisites = Array.isArray(data.prerequisites) ? data.prerequisites : [];
+    const envVariables = Array.isArray(data.envVariables) ? data.envVariables : [];
+    const keyDirectories = Array.isArray(data.keyDirectories) ? data.keyDirectories : [];
+    const commonTasks = Array.isArray(data.commonTasks) ? data.commonTasks : [];
+    const troubleshooting = Array.isArray(data.troubleshooting) ? data.troubleshooting : [];
+    const tips = Array.isArray(data.tips) ? data.tips : [];
 
-    const envHints = (data.envHints || [])
-      .map((hint: string) => `- ${hint}`)
-      .join("\n");
+    let md = `## 开发指南
 
-    const keyPaths = (data.keyPaths || [])
-      .map((path: string) => `- \`${path}\``)
-      .join("\n");
+`;
 
-    const pitfalls = (data.pitfalls || [])
-      .map((pitfall: string) => `- ${pitfall}`)
-      .join("\n");
+    if (prerequisites.length > 0) {
+      md += `### 环境要求
+${prerequisites.map((p: string) => `- ${p}`).join("\n")}
 
-    const evidence = (data.evidence || [])
-      .map((item: any) => `- \`${item.path}\`：${item.reason}`)
-      .join("\n");
+`;
+    }
 
-    const confidence = data.confidence || "medium";
-    const confidenceEmoji = confidence === "high" ? "✅" : confidence === "medium" ? "⚠️" : "❓";
+    md += `### 快速开始
 
-    return `## 开发指南
+\`\`\`bash
+# 安装依赖
+${quickStart.install || "npm install"}
 
-### 启动方式
-${data.startup || "- 暂无"}
+# 启动开发服务
+${quickStart.dev || "npm run dev"}
 
-### 常用脚本
-${scripts || "- 暂无"}
+# 构建生产版本
+${quickStart.build || "npm run build"}
+${quickStart.test ? `\n# 运行测试\n${quickStart.test}` : ""}
+\`\`\`
 
-### 环境变量线索
-${envHints || "- 暂无"}
+`;
 
-### 关键路径
-${keyPaths || "- 暂无"}
+    if (envVariables.length > 0) {
+      md += `### 环境变量
 
-### 注意事项
-${pitfalls || "- 暂无"}
+| 变量名 | 说明 | 必需 | 默认值 |
+|--------|------|------|--------|
+${envVariables.map((e: any) => `| \`${e.name || e.variable || "-"}\` | ${e.description || "-"} | ${e.required ? "是" : "否"} | ${e.default || e.defaultValue || "-"} |`).join("\n")}
 
-### 证据来源
-${evidence || "- 暂无"}
+`;
+    }
 
-- 置信度：${confidenceEmoji} ${confidence}`;
+    if (keyDirectories.length > 0) {
+      md += `### 关键目录
+
+| 路径 | 用途 |
+|------|------|
+${keyDirectories.map((d: any) => `| \`${d.path || "-"}\` | ${d.purpose || d.description || "-"} |`).join("\n")}
+
+`;
+    }
+
+    if (commonTasks.length > 0) {
+      md += `### 常见开发任务
+${commonTasks.map((t: any) => `- **${t.task || t.name || "-"}**: ${t.howTo || t.description || "-"}`).join("\n")}
+
+`;
+    }
+
+    if (troubleshooting.length > 0) {
+      md += `### 常见问题
+
+| 问题 | 解决方案 |
+|------|----------|
+${troubleshooting.slice(0, 6).map((t: any) => `| ${t.problem || t.error || "-"} | ${t.solution || "-"} |`).join("\n")}
+
+`;
+    }
+
+    if (tips.length > 0) {
+      md += `### 开发提示
+${tips.map((t: string) => `- 💡 ${t}`).join("\n")}
+
+`;
+    }
+
+    return md;
   }
 }

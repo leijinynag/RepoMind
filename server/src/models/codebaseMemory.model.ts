@@ -6,16 +6,33 @@ export interface ICodebaseMemory extends Document {
   overview: {
     name: string;
     description: string;
-    techStack: string[];
+    techStack: {
+      frontend: string[];
+      backend: string[];
+      database: string[];
+      devTools: string[];
+    };
     type: string;
   };
 
+  // 架构摘要（兼容旧格式）
   architectureSummary: string;
+
+  // 新增：结构化架构信息
+  architecture?: {
+    purpose?: string;
+    useCases?: string[];
+    targetUsers?: string[];
+    pattern?: string;
+    howItWorks?: string;
+    quickStart?: string;
+    warnings?: string[];
+  };
 
   structureSummary?: {
     areas: Array<{ path: string; role: string }>;
     entrypoints: Array<{ path: string; reason: string }>;
-    boundaries: string[];
+    boundaries: Array<{ name?: string; type?: string; description?: string; location?: string }>;
     summary: string;
   };
 
@@ -76,16 +93,32 @@ const CodebaseMemorySchema = new Schema<ICodebaseMemory>({
   overview: {
     name: { type: String, required: true },
     description: { type: String, required: true },
-    techStack: [{ type: String }],
+    techStack: {
+      frontend: [{ type: String }],
+      backend: [{ type: String }],
+      database: [{ type: String }],
+      devTools: [{ type: String }],
+    },
     type: { type: String, required: true },
   },
 
   architectureSummary: { type: String, required: true },
 
+  // 新增：结构化架构信息
+  architecture: {
+    purpose: { type: String },
+    useCases: [{ type: String }],
+    targetUsers: [{ type: String }],
+    pattern: { type: String },
+    howItWorks: { type: String },
+    quickStart: { type: String },
+    warnings: [{ type: String }],
+  },
+
   structureSummary: {
     areas: [{ path: String, role: String }],
     entrypoints: [{ path: String, reason: String }],
-    boundaries: [{ type: String }],
+    boundaries: [{ name: String, type: String, description: String, location: String }],
     summary: String,
   },
 

@@ -22,7 +22,6 @@ export class EntryFlowSkill extends BaseSkill {
               path: { type: "string", description: "入口文件路径" },
               type: { type: "string", description: "入口类型" },
               description: { type: "string", description: "入口描述" },
-              triggers: { type: "array", items: { type: "string" }, description: "触发入口的条件" },
             },
           },
           description: "系统入口点列表",
@@ -39,21 +38,9 @@ export class EntryFlowSkill extends BaseSkill {
           },
           description: "主流程列表",
         },
-        evidence: {
-          type: "array",
-          items: {
-            type: "object",
-            properties: {
-              path: { type: "string", description: "证据文件路径" },
-              reason: { type: "string", description: "该文件支持结论的原因" },
-            },
-          },
-          description: "支持结论的证据文件",
-        },
         summary: { type: "string", description: "入口流程摘要" },
-        confidence: { type: "string", enum: ["high", "medium", "low"], description: "结论置信度" },
       },
-      required: ["entrypoints", "summary", "evidence", "confidence"],
+      required: ["entrypoints", "summary"],
     },
   };
 
@@ -70,11 +57,11 @@ export class EntryFlowSkill extends BaseSkill {
         "定位核心业务入口",
       ],
       dependsOn: this.definition.dependsOn,
-      outputFields: ["entrypoints", "mainFlow", "summary", "evidence", "confidence"],
+      outputFields: ["entrypoints", "mainFlow", "summary"],
       tags: ["entry", "flow", "structure"],
       cost: "low",
-      suitableFor: ["trace_flow", "overview", "architecture"],
-      outputKinds: ["entrypoints", "flow", "evidence"],
+      suitableFor: ["trace_flow", "overview"],
+      outputKinds: ["entrypoints", "flow"],
       useWhen: "需要了解项目入口和启动流程时",
       avoidWhen: "只需要简单问答时",
     };
@@ -85,8 +72,7 @@ export class EntryFlowSkill extends BaseSkill {
 分析项目入口点和主流程时重点考虑：
 1. 确定主要入口文件（如 main.ts, index.ts, app.ts）
 2. 分析入口触发条件
-3. 追踪入口的主要调用路径
-结论必须有文件证据支持。`;
+3. 追踪入口的主要调用路径`;
   }
 
   getUserPrompt(_input: SkillInput, context: SkillContext): string {
@@ -115,11 +101,9 @@ ${JSON.stringify(entrypoints, null, 2)}
     context: SkillContext,
     onProgress?: (event: SkillProgressEvent) => void,
   ): Promise<{
-    entrypoints: Array<{ path: string; type: string; description: string; triggers: string[] }>;
+    entrypoints: Array<{ path: string; type: string; description: string }>;
     mainFlow: Array<{ name: string; steps: string[]; entryFile: string }>;
-    evidence: Array<{ path: string; reason: string }>;
     summary: string;
-    confidence: "high" | "medium" | "low";
   }> {
     onProgress?.({ type: "thinking", content: "分析入口流程" });
 
@@ -128,17 +112,6 @@ ${JSON.stringify(entrypoints, null, 2)}
 
     // 从结构摘要中获取入口点
     const existingEntrypoints = structure?.entrypoints || [];
-
-    // 构建证据列表
-    const evidence: Array<{ path: string; reason: string }> = [];
-
-    // 添加入口点作为证据
-    for (const entry of existingEntrypoints.slice(0, 5)) {
-      evidence.push({
-        path: entry.path,
-        reason: `入口文件：${entry.reason}`,
-      });
-    }
 
     // 构建主流程（基于项目类型推断）
     const mainFlow: Array<{ name: string; steps: string[]; entryFile: string }> = [];
@@ -192,14 +165,6 @@ ${JSON.stringify(entrypoints, null, 2)}
       }
     }
 
-    // 确定置信度
-    let confidence: "high" | "medium" | "low" = "medium";
-    if (existingEntrypoints.length > 0 && mainFlow.length > 0) {
-      confidence = "high";
-    } else if (existingEntrypoints.length === 0) {
-      confidence = "low";
-    }
-
     const summary = `识别到 ${existingEntrypoints.length} 个入口点，${mainFlow.length} 条主流程。项目类型为 ${projectType}。`;
 
     return {
@@ -207,18 +172,15 @@ ${JSON.stringify(entrypoints, null, 2)}
         path: e.path,
         type: e.type || "entry",
         description: e.reason || "入口文件",
-        triggers: [],
       })),
       mainFlow,
-      evidence,
       summary,
-      confidence,
     };
   }
 
   formatMarkdown(data: Record<string, any>): string {
     const entrypoints = (data.entrypoints || [])
-      .map((e: any) => `- \`${e.path}\`：${e.type} - ${e.description}`)
+      .map((e: any) => `- 📄 \`${e.path}\` — ${e.type}: ${e.description}`)
       .join("\n");
 
     const mainFlow = (data.mainFlow || [])
@@ -228,12 +190,6 @@ ${JSON.stringify(entrypoints, null, 2)}
       })
       .join("\n\n");
 
-    const evidence = (data.evidence || [])
-      .map((e: any) => `- \`${e.path}\`：${e.reason}`)
-      .join("\n");
-
-    const confidenceEmoji = data.confidence === "high" ? "✅" : data.confidence === "medium" ? "⚠️" : "❓";
-
     return `## 入口流程分析
 
 ${data.summary}
@@ -242,11 +198,6 @@ ${data.summary}
 ${entrypoints || "- 暂无"}
 
 ### 主流程
-${mainFlow || "- 暂无"}
-
-### 证据来源
-${evidence || "- 暂无"}
-
-- 置信度：${confidenceEmoji} ${data.confidence}`;
+${mainFlow || "- 暂无"}`;
   }
 }
