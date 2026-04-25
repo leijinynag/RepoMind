@@ -6,6 +6,7 @@ import { CodeOutlined } from '@ant-design/icons'
 import axios from 'axios'
 import { useChatStore } from '@/stores/chatStore'
 import AgentGraph from '@/components/AgentGraph'
+import { SkillWorkflowGraph } from '@/components/AgentGraph'
 
 interface RepoInfo {
   name: string
@@ -17,12 +18,18 @@ export default function ChatPage() {
   const [chatWidth, setChatWidth] = useState(380)
   const [isResizing, setIsResizing] = useState(false)
   const containerRef = useRef<HTMLDivElement>(null)
-  
+
   // 获取当前思考步骤和已完成的显示步骤
   const { currentSteps, displaySteps, loading } = useChatStore()
-  
+
+  // 获取增强模式状态
+  const { chatMode, skillExecutions, plannerDecision, workflowSummary } = useChatStore()
+
   // 优先显示正在进行的 steps，否则显示已完成的 displaySteps
   const stepsToShow = currentSteps.length > 0 ? currentSteps : displaySteps
+
+  // 判断是否显示增强模式工作流图
+  const showSkillWorkflow = chatMode === 'enhanced' && skillExecutions.length > 0
 
   useEffect(() => {
     if (repoId) {
@@ -103,8 +110,18 @@ export default function ChatPage() {
           borderRight: '1px solid var(--border-primary)',
         }}
       >
-        {/* 当有思考步骤时显示 AgentGraph */}
-        {stepsToShow.length > 0 ? (
+        {/* 增强模式：显示 SkillWorkflowGraph */}
+        {showSkillWorkflow ? (
+          <div style={{ width: '100%', height: '100%', padding: 24 }}>
+            <SkillWorkflowGraph
+              plannerDecision={plannerDecision || undefined}
+              skills={skillExecutions}
+              summary={workflowSummary || undefined}
+              compact={false}
+            />
+          </div>
+        ) : stepsToShow.length > 0 ? (
+          /* 普通模式：显示 AgentGraph */
           <AgentGraph steps={stepsToShow} />
         ) : (
           <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>

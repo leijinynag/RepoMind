@@ -22,11 +22,16 @@ import { ApiSurfaceSummarySkill } from "../skill/skills/ApiSurfaceSummarySkill";
 import { FrontendApiTraceSkill } from "../skill/skills/FrontendApiTraceSkill";
 import { BackendRouteTraceSkill } from "../skill/skills/BackendRouteTraceSkill";
 import { BusinessFlowSummarySkill } from "../skill/skills/BusinessFlowSummarySkill";
+import { DependenciesAnalysisSkill } from "../skill/skills/DependenciesAnalysisSkill";
+import { CodeMetricsSkill } from "../skill/skills/CodeMetricsSkill";
+import { TestAnalysisSkill } from "../skill/skills/TestAnalysisSkill";
 import { WorkflowPlanner } from "../skill/planner/workflowPlanner";
 import { DynamicWorkflowBuilder } from "../skill/planner/DynamicWorkflowBuilder";
+import { CodebaseMemoryAggregator } from "../analysis/CodebaseMemoryAggregator";
 
 const router = Router();
 const workflowRunStore = new WorkflowRunStore();
+const aggregator = new CodebaseMemoryAggregator();
 
 function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
@@ -51,6 +56,9 @@ function createSkillRegistry(): SkillRegistry {
     new FrontendApiTraceSkill(),
     new BackendRouteTraceSkill(),
     new BusinessFlowSummarySkill(),
+    new DependenciesAnalysisSkill(),
+    new CodeMetricsSkill(),
+    new TestAnalysisSkill(),
   ]);
   return skillRegistry;
 }
@@ -294,7 +302,7 @@ async function runEnhancedModeStream(
 
   res.write(`data: ${JSON.stringify({
     type: "workflow_start",
-    workflow: { id: workflow.id, skills: workflow.skills },
+    workflow: { id: workflow.id, skills: workflow.skills, goal: plannerDecision.goal },
   })}\n\n`);
 
   // Step 3: 执行工作流
@@ -306,19 +314,41 @@ async function runEnhancedModeStream(
     },
   );
 
-  // Step 4: 工作流完成，基于结果回答问题
+  // Step 4: 存储结果到 CodebaseMemory
+  try {
+    await aggregator.aggregate(repoId, result);
+  } catch (error: any) {
+    console.warn("聚合结果失败:", error.message);
+  }
+
+  // Step 5: 工作流完成，基于结果回答问题
   res.write(`data: ${JSON.stringify({ type: "workflow_complete", result: { success: result.success } })}\n\n`);
 
-  // Step 5: 基于工作流结果生成最终回答
-  const contextSummary = buildContextSummary(result);
-  const enhancedPrompt = `基于以下项目分析结果回答用户问题：
+  // Step 6: 构建丰富的上下文摘要
+  const contextSummary = buildRichContextSummary(result, message);
 
-用户问题：${message}
+  // Step 7: 基于工作流结果生成最终回答
+  res.write(`data: ${JSON.stringify({ type: "summarizing", message: "正在总结分析结果..." })}\n\n`);
 
-项目分析结果：
+  const enhancedPrompt = `你是一个代码分析助手。用户提出了一个问题，我们已经运行了多个分析技能收集了相关信息。
+
+## 用户问题
+${message}
+
+## 分析目标
+${plannerDecision.goal}
+
+## 分析结果
+
 ${contextSummary}
 
-请基于以上分析结果，用简洁清晰的语言回答用户问题。`;
+---
+
+请基于以上分析结果，用简洁清晰的语言回答用户问题。注意：
+1. 直接回答用户的问题，不要重复分析过程
+2. 如果分析结果中没有相关信息，诚实说明
+3. 引用关键信息时，可以提及来源（如"根据架构分析..."）
+4. 保持回答的实用性，帮助用户理解或解决问题`;
 
   const answer = await runReActLoop(enhancedPrompt, repoId, [], "deepseek",
     (step) => {
@@ -334,24 +364,130 @@ ${contextSummary}
 }
 
 /**
- * 构建上下文摘要
+ * 构建丰富的上下文摘要（使用 markdown 输出）
  */
-function buildContextSummary(result: any): string {
+function buildRichContextSummary(result: any, question: string): string {
   const parts: string[] = [];
 
-  for (const [skillId, skillResult] of Object.entries(result.skillResults || {})) {
-    const sr = skillResult as { success?: boolean; data?: any; markdown?: string; duration?: number; error?: string };
-    if (sr.success && sr.data) {
-      const data = sr.data as any;
-      if (data.summary) {
-        parts.push(`【${skillId}】\n${data.summary}`);
-      } else if (data.description) {
-        parts.push(`【${skillId}】\n${data.description}`);
+  // 按重要性排序的 skill
+  const priorityOrder = [
+    "architecture_summary",
+    "project_overview",
+    "structure_summary",
+    "dev_guide",
+    "dependencies_analysis",
+    "test_analysis",
+    "code_metrics",
+    "key_files",
+    "business_flow_summary",
+    "frontend_api_trace",
+    "backend_route_trace",
+    "api_surface_summary",
+  ];
+
+  // 获取所有成功的 skill 结果
+  const successfulSkills = Object.entries(result.skillResults || {})
+    .filter(([, sr]) => (sr as any).success)
+    .map(([id]) => id);
+
+  // 按优先级排序
+  const sortedSkills = priorityOrder.filter(id => successfulSkills.includes(id));
+  const remainingSkills = successfulSkills.filter(id => !priorityOrder.includes(id));
+  const allSkills = [...sortedSkills, ...remainingSkills];
+
+  for (const skillId of allSkills) {
+    const sr = result.skillResults[skillId];
+    if (!sr || !sr.success) continue;
+
+    const skillName = getSkillDisplayName(skillId);
+
+    // 优先使用 markdown 输出
+    if (sr.markdown) {
+      parts.push(`### ${skillName}\n\n${sr.markdown}`);
+    } else if (sr.data) {
+      // 如果没有 markdown，使用 data 构建
+      const dataStr = formatDataOutput(sr.data, skillId);
+      if (dataStr) {
+        parts.push(`### ${skillName}\n\n${dataStr}`);
       }
     }
   }
 
-  return parts.join("\n\n");
+  return parts.join("\n\n---\n\n");
+}
+
+/**
+ * 获取 Skill 的显示名称
+ */
+function getSkillDisplayName(skillId: string): string {
+  const names: Record<string, string> = {
+    project_overview: "项目概览",
+    architecture_summary: "架构摘要",
+    structure_summary: "结构摘要",
+    dev_guide: "开发指南",
+    dependencies_analysis: "依赖分析",
+    test_analysis: "测试分析",
+    code_metrics: "代码度量",
+    key_files: "关键文件",
+    business_flow_summary: "业务流摘要",
+    frontend_api_trace: "前端 API 追踪",
+    backend_route_trace: "后端路由追踪",
+    api_surface_summary: "API 接口面摘要",
+  };
+  return names[skillId] || skillId;
+}
+
+/**
+ * 格式化 data 输出
+ */
+function formatDataOutput(data: any, skillId: string): string {
+  if (!data) return "";
+
+  // 针对不同 skill 类型格式化
+  switch (skillId) {
+    case "project_overview":
+      return formatProjectOverview(data);
+    case "architecture_summary":
+      return formatArchitectureSummary(data);
+    case "dependencies_analysis":
+      return formatDependencies(data);
+    default:
+      // 默认输出 JSON（截断）
+      const jsonStr = JSON.stringify(data, null, 2);
+      return jsonStr.length > 500 ? jsonStr.slice(0, 500) + "..." : jsonStr;
+  }
+}
+
+function formatProjectOverview(data: any): string {
+  const lines: string[] = [];
+  if (data.packageJson?.name) lines.push(`- 项目名称: ${data.packageJson.name}`);
+  if (data.projectType) lines.push(`- 项目类型: ${data.projectType}`);
+  if (data.stats?.totalFiles) lines.push(`- 文件数量: ${data.stats.totalFiles}`);
+  if (data.stats?.totalLines) lines.push(`- 代码行数: ${data.stats.totalLines}`);
+  return lines.join("\n") || JSON.stringify(data, null, 2).slice(0, 500);
+}
+
+function formatArchitectureSummary(data: any): string {
+  const lines: string[] = [];
+  if (data.purpose) lines.push(`- 项目定位: ${data.purpose}`);
+  if (data.architecturePattern) lines.push(`- 架构模式: ${data.architecturePattern}`);
+  if (data.howItWorks) lines.push(`- 工作原理: ${data.howItWorks}`);
+  if (Array.isArray(data.useCases) && data.useCases.length > 0) {
+    lines.push(`- 使用场景: ${data.useCases.slice(0, 3).join(", ")}`);
+  }
+  return lines.join("\n") || "";
+}
+
+function formatDependencies(data: any): string {
+  const lines: string[] = [];
+  if (data.summary) lines.push(data.summary);
+  if (Array.isArray(data.coreFrameworks) && data.coreFrameworks.length > 0) {
+    lines.push("- 核心框架:");
+    data.coreFrameworks.slice(0, 5).forEach((f: any) => {
+      lines.push(`  - ${f.name}: ${f.version || "未知版本"}`);
+    });
+  }
+  return lines.join("\n") || "";
 }
 
 export default router;

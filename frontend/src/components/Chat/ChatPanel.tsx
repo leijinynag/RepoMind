@@ -3,7 +3,7 @@ import { useChatStore, ModelType } from '@/stores/chatStore'
 import { useSSE } from '@/hooks/useSSE'
 import { MessageBubble } from './MessageBubble'
 import { InputBar } from './InputBar'
-import { ModeSelector, ChatMode } from './ModeSelector'
+import { ModeSelector } from './ModeSelector'
 import { AgentStep } from '@/types/agent'
 import { Card, Spin, Timeline, Typography, Select, Progress, Tag } from 'antd'
 import { RobotOutlined, BulbOutlined, ToolOutlined, EyeOutlined, LoadingOutlined, ThunderboltOutlined } from '@ant-design/icons'
@@ -38,11 +38,17 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
     setCurrentRepo,
     currentModel,
     setCurrentModel,
+    // Enhanced mode from store
+    chatMode,
+    setChatMode,
+    setSkillExecutions,
+    setPlannerDecision,
+    setWorkflowSummary,
+    clearEnhancedState,
   } = useChatStore()
   const messages = getMessages(repoId);
 
-  // 增强模式状态
-  const [chatMode, setChatMode] = useState<ChatMode>('normal')
+  // 工作流进度（本地状态，仅用于显示进度条）
   const [workflowProgress, setWorkflowProgress] = useState<{
     total: number
     completed: number
@@ -52,6 +58,7 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
   useEffect(()=>{
     setCurrentRepo(repoId);
   },[repoId,setCurrentRepo]);
+
   const { sendMessage, streamingContent } = useSSE()
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
@@ -67,7 +74,8 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
     addMessage(repoId, { role: 'user', content: message });
     setLoading(true);
     clearSteps();
-    clearDisplaySteps();  // 新对话开始时清除上次的显示
+    clearDisplaySteps();
+    clearEnhancedState();  // 清除增强模式状态
     setWorkflowProgress(null);
 
     const history = messages.map((m) => ({
@@ -78,9 +86,10 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
     let collectedSteps: AgentStep[] = [];
 
     await sendMessage(repoId, message, history, currentModel, {
-      mode: chatMode,  // 传递模式参数
-      onPlannerDecision: (decision: any) => {
-        // Planner 决策回调
+      mode: chatMode,
+      onPlannerDecision: (decision) => {
+        // 保存到 store
+        setPlannerDecision(decision);
         if (decision.mode === 'run_workflow') {
           addStep({
             type: 'thought',
@@ -90,13 +99,20 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
           });
         }
       },
-      onWorkflowProgress: (progress: any) => {
-        // 工作流进度回调
+      onWorkflowProgress: (progress) => {
         setWorkflowProgress({
           total: progress.total,
           completed: progress.completed,
           currentSkill: progress.current,
         });
+      },
+      onSkillUpdate: (skills) => {
+        // 更新技能执行状态到 store
+        setSkillExecutions(skills);
+      },
+      onWorkflowSummary: (summary) => {
+        // 保存到 store
+        setWorkflowSummary(summary);
       },
       onStep: (step: AgentStep) => {
         addStep(step);
@@ -104,14 +120,14 @@ export function ChatPanel({ repoId, repoName }: ChatPanelProps) {
       },
       onAnswer: (answer: string) => {
         addMessage(repoId, { role: 'assistant', content: answer, steps: collectedSteps });
-        setDisplaySteps(collectedSteps);  // 保存到 displaySteps 用于持续显示
+        setDisplaySteps(collectedSteps);
         clearSteps();
         setLoading(false);
         setWorkflowProgress(null);
       },
       onError: (error: string) => {
         addMessage(repoId, { role: 'assistant', content: `❌ 错误: ${error}` });
-        setDisplaySteps(collectedSteps);  // 错误时也保存，方便调试
+        setDisplaySteps(collectedSteps);
         clearSteps();
         setLoading(false);
         setWorkflowProgress(null);

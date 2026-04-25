@@ -53,3 +53,11 @@ export default function AgentGraph({ steps }: AgentGraphProps) {
     </div>
   );
 }
+
+// 导出 SkillWorkflowGraph 组件
+export { default as SkillWorkflowGraph } from './SkillWorkflowGraph';
+export type {
+  SkillExecution,
+  PlannerDecision,
+  WorkflowSummary,
+} from './SkillWorkflowGraph';
