@@ -1,6 +1,7 @@
 // server/src/agent/core/AgentLoop.ts
 
 import { LLMClient, Message, ToolCall, ToolDefinition } from "../../llm/LLmClient";
+import { ContextManager } from "./ContextManager";
 
 // Agent 运行过程中的每一步
 export interface AgentStep {
@@ -41,17 +42,24 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<string> {
     onToken,
   } = options;
 
-  // 构建初始 messages
-  const messages: Message[] = [
-    { role: "system", content: systemPrompt },
-    ...history,
-    { role: "user", content: userPrompt },
-  ];
+  // 使用 ContextManager 管理消息
+  const contextManager = new ContextManager({
+    maxMessages: 30,
+    keepFirstN: 3,
+    keepLastN: 10,
+    maxToolResultLength: 4000,
+    checkpointInterval: 8,
+  });
+
+  contextManager.initialize(systemPrompt, history, userPrompt);
 
   let globalStepIndex = 0;
 
   for (let step = 0; step < maxSteps; step++) {
     console.log(`\n=== Step ${step + 1} ===`);
+
+    // 获取当前消息（可能已被压缩）
+    const messages = contextManager.getMessages();
 
     // 1. 调用 LLM
     const response = await llmClient.chat(messages, { tools });
@@ -60,6 +68,7 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<string> {
 
     console.log("LLM 返回 content:", content?.slice(0, 100) || "(空)");
     console.log("LLM 返回 toolCalls:", toolCalls?.length || 0, "个");
+    console.log("上下文状态:", contextManager.getDebugInfo());
 
     // 2. 如果没有工具调用，说明是最终答案
     if (content && !toolCalls?.length) {
@@ -104,13 +113,8 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<string> {
         });
       }
 
-      // 构建 assistant 消息
-      const assistantMessage: Message = {
-        role: "assistant",
-        content: content || "",
-        tool_calls: toolCalls,
-      };
-      messages.push(assistantMessage);
+      // 添加 assistant 消息到上下文管理器
+      contextManager.addAssistantMessage(content, toolCalls);
 
       // 执行所有工具调用
       const toolResults = await Promise.all(
@@ -166,21 +170,16 @@ export async function runAgentLoop(options: AgentLoopOptions): Promise<string> {
         })
       );
 
-      // 将工具结果加入对话
+      // 将工具结果加入上下文管理器
       for (const tr of toolResults) {
-        messages.push({
-          role: "tool",
-          tool_call_id: tr.id,
-          content: tr.result,
-        });
+        contextManager.addToolResult(tr.id, tr.result);
       }
     } else {
       // 既没有内容也没有工具调用
       console.warn("⚠️ LLM 返回空响应，重试");
-      messages.push({
-        role: "user",
-        content: "请继续分析并回答问题，或调用工具获取更多信息。",
-      });
+      contextManager.addAssistantMessage("");
+      // 添加提示消息
+      contextManager.addToolResult("retry", "请继续分析并回答问题，或调用工具获取更多信息。");
     }
   }
 

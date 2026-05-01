@@ -1,7 +1,4 @@
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import StreamingMarkdown from '@/components/common/StreamingMarkdown'
 import { AgentStep } from '@/types/agent'
 import { useState } from 'react'
 import { Typography, Tag, Button } from 'antd'
@@ -35,59 +32,7 @@ export function MessageBubble({ role, content, steps }: MessageBubbleProps) {
             <span style={{ whiteSpace: 'pre-wrap' }}>{content}</span>
           ) : (
             <div className="prose prose-sm max-w-none">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                components={{
-                  code({ node, inline, className, children, ...props }: any) {
-                    const match = /language-(\w+)/.exec(className || '')
-                    return !inline && match ? (
-                      <SyntaxHighlighter
-                        style={oneDark}
-                        language={match[1]}
-                        PreTag="div"
-                        customStyle={{ borderRadius: 8, fontSize: 12, margin: '8px 0' }}
-                        {...props}
-                      >
-                        {String(children).replace(/\n$/, '')}
-                      </SyntaxHighlighter>
-                    ) : (
-                      <code style={{
-                        background: 'var(--bg-tertiary)',
-                        color: 'var(--accent)',
-                        padding: '1px 4px',
-                        borderRadius: 3,
-                        fontSize: 12,
-                        fontFamily: 'monospace',
-                      }} {...props}>
-                        {children}
-                      </code>
-                    )
-                  },
-                  p({ children }) {
-                    return <p style={{ marginBottom: 6, lineHeight: 1.6 }}>{children}</p>
-                  },
-                  ul({ children }) {
-                    return <ul style={{ paddingLeft: 16, marginBottom: 6 }}>{children}</ul>
-                  },
-                  ol({ children }) {
-                    return <ol style={{ paddingLeft: 16, marginBottom: 6 }}>{children}</ol>
-                  },
-                  li({ children }) {
-                    return <li style={{ lineHeight: 1.6 }}>{children}</li>
-                  },
-                  h1({ children }) {
-                    return <h1 style={{ fontSize: 16, fontWeight: 700, margin: '10px 0 6px' }}>{children}</h1>
-                  },
-                  h2({ children }) {
-                    return <h2 style={{ fontSize: 14, fontWeight: 700, margin: '10px 0 6px' }}>{children}</h2>
-                  },
-                  h3({ children }) {
-                    return <h3 style={{ fontSize: 13, fontWeight: 700, margin: '8px 0 4px' }}>{children}</h3>
-                  },
-                }}
-              >
-                {content}
-              </ReactMarkdown>
+              <StreamingMarkdown content={content} isStreaming={false} />
             </div>
           )}
         </div>
@@ -104,7 +49,7 @@ export function MessageBubble({ role, content, steps }: MessageBubbleProps) {
             >
               查看思考过程 ({steps.length} 步)
             </Button>
-            
+
             {showSteps && (
               <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 6 }}>
                 {steps.map((step, index) => (

@@ -84,6 +84,43 @@ export const useSSE = () => {
   const tokenBufferRef = useRef("");
   const rafIdRef = useRef<number | null>(null);
   const stepIndexRef = useRef(0);
+  const lastFlushTimeRef = useRef(0);
+
+  // 批量更新配置
+  const BATCH_INTERVAL = 50; // 50ms 批量窗口
+
+  // 刷新 token 缓冲区
+  const flushTokenBuffer = useCallback(() => {
+    if (tokenBufferRef.current) {
+      setStreamingContent((prev) => prev + tokenBufferRef.current);
+      tokenBufferRef.current = "";
+      lastFlushTimeRef.current = performance.now();
+    }
+  }, []);
+
+  // 处理 token 的批量更新
+  const handleToken = useCallback((token: string) => {
+    tokenBufferRef.current += token;
+
+    const now = performance.now();
+    const timeSinceLastFlush = now - lastFlushTimeRef.current;
+
+    // 超过批量间隔立即刷新
+    if (timeSinceLastFlush >= BATCH_INTERVAL) {
+      // 取消未执行的 RAF
+      if (rafIdRef.current !== null) {
+        cancelAnimationFrame(rafIdRef.current);
+        rafIdRef.current = null;
+      }
+      flushTokenBuffer();
+    } else if (rafIdRef.current === null) {
+      // 否则在下一帧刷新
+      rafIdRef.current = requestAnimationFrame(() => {
+        flushTokenBuffer();
+        rafIdRef.current = null;
+      });
+    }
+  }, [flushTokenBuffer]);
 
   const sendMessage = useCallback(
     async (
@@ -100,6 +137,9 @@ export const useSSE = () => {
       // Reset skill tracking
       skillExecutionsRef.current = [];
       skillStartTimeRef.current = {};
+      // Reset batch state
+      tokenBufferRef.current = "";
+      lastFlushTimeRef.current = performance.now();  // 初始化为当前时间，而不是 0
 
       try {
         const response = await fetch(`/api/chat/${repoId}/stream`, {
@@ -246,24 +286,17 @@ export const useSSE = () => {
               options?.onWorkflowSummary?.(summary);
               setSteps((prev) => [...prev, createStep("observation", "工作流分析完成，正在生成回答...", getNextStepIndex())]);
             } else if (data.type === "token") {
-              // 累积 token 到缓冲区
-              tokenBufferRef.current += data.content;
-              // 使用 RAF 批量更新，每帧最多渲染一次
-              if (rafIdRef.current === null) {
-                rafIdRef.current = requestAnimationFrame(() => {
-                  setStreamingContent((prev) => prev + tokenBufferRef.current);
-                  tokenBufferRef.current = "";
-                  rafIdRef.current = null;
-                });
-              }
+              // 使用批量更新处理 token
+              handleToken(data.content);
               options?.onToken?.(data.content);
             } else if (data.type === "step") {
-              // 清理缓冲区和 RAF
+              // 刷新剩余 buffer
+              flushTokenBuffer();
+              // 清理 RAF
               if (rafIdRef.current !== null) {
                 cancelAnimationFrame(rafIdRef.current);
                 rafIdRef.current = null;
               }
-              tokenBufferRef.current = "";
               setStreamingContent("");
               const step = {
                 ...data.step,
@@ -273,11 +306,9 @@ export const useSSE = () => {
               setSteps((prev) => [...prev, step]);
               options?.onStep?.(step);
             } else if (data.type === "answer") {
-              // 确保最后的 token 被刷新
-              if (tokenBufferRef.current) {
-                setStreamingContent((prev) => prev + tokenBufferRef.current);
-                tokenBufferRef.current = "";
-              }
+              // 刷新剩余 buffer
+              flushTokenBuffer();
+              // 清理 RAF
               if (rafIdRef.current !== null) {
                 cancelAnimationFrame(rafIdRef.current);
                 rafIdRef.current = null;
@@ -286,12 +317,13 @@ export const useSSE = () => {
               options?.onAnswer?.(data.content);
               setLoading(false);
             } else if (data.type === "error") {
-              // 清理缓冲区和 RAF
+              // 刷新剩余 buffer
+              flushTokenBuffer();
+              // 清理 RAF
               if (rafIdRef.current !== null) {
                 cancelAnimationFrame(rafIdRef.current);
                 rafIdRef.current = null;
               }
-              tokenBufferRef.current = "";
               setStreamingContent("");
               options?.onError?.(data.content);
               setLoading(false);
@@ -319,11 +351,12 @@ export const useSSE = () => {
           processLine(buffer.trim());
         }
       } catch (error: any) {
+        flushTokenBuffer();
         options?.onError?.(error.message || "请求失败");
         setLoading(false);
       }
     },
-    [],
+    [handleToken, flushTokenBuffer],
   );
 
   return {

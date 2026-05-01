@@ -7,10 +7,7 @@ import { ModeSelector } from './ModeSelector'
 import { AgentStep } from '@/types/agent'
 import { Card, Spin, Timeline, Typography, Select, Progress, Tag } from 'antd'
 import { RobotOutlined, BulbOutlined, ToolOutlined, EyeOutlined, LoadingOutlined, ThunderboltOutlined } from '@ant-design/icons'
-import ReactMarkdown from 'react-markdown'
-import remarkGfm from 'remark-gfm'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import StreamingMarkdown from '@/components/common/StreamingMarkdown'
 
 interface ChatPanelProps {
   repoId: string
@@ -262,43 +259,8 @@ function StreamingMessage({ content }: { content: string }) {
       <div className="msg-body">
         <div className="msg-bubble bot">
           <div className="prose prose-sm max-w-none">
-            <ReactMarkdown
-              remarkPlugins={[remarkGfm]}
-              components={{
-                code({ node, inline, className, children, ...props }: any) {
-                  const match = /language-(\w+)/.exec(className || '')
-                  return !inline && match ? (
-                    <SyntaxHighlighter
-                      style={oneDark}
-                      language={match[1]}
-                      PreTag="div"
-                      customStyle={{ borderRadius: 8, fontSize: 12, margin: '8px 0' }}
-                      {...props}
-                    >
-                      {String(children).replace(/\n$/, '')}
-                    </SyntaxHighlighter>
-                  ) : (
-                    <code style={{
-                      background: 'var(--bg-tertiary)',
-                      color: 'var(--accent)',
-                      padding: '1px 4px',
-                      borderRadius: 3,
-                      fontSize: 12,
-                      fontFamily: 'monospace',
-                    }} {...props}>
-                      {children}
-                    </code>
-                  )
-                },
-                p({ children }) {
-                  return <p style={{ marginBottom: 6, lineHeight: 1.6 }}>{children}</p>
-                },
-              }}
-            >
-              {content}
-            </ReactMarkdown>
+            <StreamingMarkdown content={content} isStreaming={true} />
           </div>
-          <span className="streaming-cursor" />
         </div>
       </div>
     </div>
